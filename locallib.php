@@ -40,6 +40,7 @@ require_once(__DIR__ . '/classes/algorithm_status.php');
 // Takes care of loading all the solvers.
 require_once(dirname(__FILE__) . '/solver/ford-fulkerson-koegel.php');
 require_once(dirname(__FILE__) . '/solver/edmonds-karp.php');
+require_once(dirname(__FILE__) . '/solver/mincost_lowerbound_distributor.php');
 
 // Now come all the strategies.
 require_once(dirname(__FILE__) . '/strategy/strategy01_yes_no.php');

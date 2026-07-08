@@ -153,6 +153,17 @@ class mod_ratingallocate_mod_form extends moodleform_mod {
         $mform->addHelpButton($elementname, $elementname, self::MOD_NAME);
         $mform->setDefault($elementname, 1);
 
+        // Department-aware allocation: balance groups across a user profile field.
+        $elementname = 'diversityfield';
+        $mform->addElement('select', $elementname, get_string($elementname, self::MOD_NAME), [
+            '' => get_string('diversityfield_off', self::MOD_NAME),
+            'department' => get_string('department'),
+            'institution' => get_string('institution'),
+        ]);
+        $mform->addHelpButton($elementname, $elementname, self::MOD_NAME);
+        $mform->setType($elementname, PARAM_ALPHA);
+        $mform->setDefault($elementname, $CFG->ratingallocate_diversityfield_default ?? '');
+
         $headerid = 'strategy_fieldset';
         $mform->addElement('header', $headerid, get_string('strategyspecificoptions', RATINGALLOCATE_MOD_NAME));
         $mform->setExpanded($headerid);

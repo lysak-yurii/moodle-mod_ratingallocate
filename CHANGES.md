@@ -1,6 +1,23 @@
 CHANGELOG
 =========
 
+Ratingallocate 5.0.0 +diversity.1 (fork)
+------------------
+
+> **This is a maintained fork of `learnweb/moodle-mod_ratingallocate`.**
+> Do **not** reinstall or update it from the Moodle plugin directory — doing so
+> will overwrite the department-aware allocation feature. Sync upstream fixes with
+> `git merge upstream/main` instead (see README, "Maintained fork" section).
+
+- Add opt-in per-activity option `diversityfield` (Off / Department / Institution).
+  When enabled, distribution uses an exact minimum-cost-flow solver with lower
+  bounds (`solver/mincost_lowerbound_distributor.php`): every student is placed and
+  every group is filled to a balanced size, while maximising the number of groups
+  that contain at least one member of each value of the chosen profile field.
+- Report which (group, field-value) pairs could not be covered and why
+  (mathematically impossible vs. group-visibility blocked).
+- Default is Off, in which case allocation behaviour is unchanged from upstream.
+
 Ratingallocate 5.0.0 (2026-02-25)
 ------------------
 

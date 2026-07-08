@@ -98,6 +98,8 @@ $string['completionvote_help'] = "To complete this activity, users have to submi
 $string['configalgorithmforcebackground'] = 'Even if triggered manually by the user the distribution will always be calculated in the background.';
 $string['configalgorithmtimeout'] = 'The time in seconds after which the algorithm is assumed to be stuck.
 The current run is terminated and marked as failed.';
+$string['configdiversityfield_default'] =
+        'Default value for the "Balance groups by" option on new Fair Allocation activities.';
 $string['configdownloaduserfields'] =
         'When downloading a table with users in it, these fields may be shown in addition to the users\' first and last name.';
 $string['confirm_delete_all_ratings'] = 'Are you sure you want to delete all ratings students have submitted so far?';
@@ -130,6 +132,19 @@ $string['distribute_unallocated_equally_confirm'] = 'All currently unallocated u
  The choices will be filled up equally, so all of them have about the same amount of places left.';
 $string['distribute_unallocated_fill_confirm'] = 'All currently unallocated users will be distributed to the choices.
  Each choice will be filled up to its maximum before assigning users to the next choice.';
+$string['diversityfield'] = 'Balance groups by';
+$string['diversityfield_default'] = 'Default for "Balance groups by"';
+$string['diversityfield_help'] = 'When set, the allocation aims to give every group at least one member of each value of the chosen user profile field (for example, each study programme stored in the Department field), so groups are as mixed as possible.
+
+Turning this on changes how the allocation works: instead of leaving unrated groups empty and some students unallocated, it performs a **complete, balanced allocation** — every student is placed and every group is filled to a balanced size (respecting each choice\'s maximum). Student ratings are still honoured as much as possible; students may be placed into groups they did not rate only when needed to fill every group.
+
+If a field value has fewer students than there are groups, it is mathematically impossible to cover every group; the allocation then covers as many groups as possible and reports which groups could not be covered.';
+$string['diversityfield_off'] = 'Off (do not balance)';
+$string['diversityinfeasible_capacity'] = 'Department-aware allocation needs room for every student: the total maximum size of all active groups ({$a->capacity}) is smaller than the number of participants ({$a->users}). Increase the groups\' maximum sizes or reduce participants, then run the distribution again.';
+$string['diversitynocoverage'] = 'Department-aware allocation: {$a} group/department combination(s) could not be covered.';
+$string['diversityreport_impossible'] = 'Field value "{$a->value}" has only {$a->count} student(s) but there are {$a->groups} groups, so at most {$a->count} group(s) can include it.';
+$string['diversityreport_blocked'] = 'No student with field value "{$a->value}" was eligible (by group restrictions) for group "{$a->choice}".';
+$string['diversityreport_heading'] = 'Group diversity coverage';
 $string['distributeequally'] = 'Distribute equally';
 $string['distributefill'] = 'Distribute by filling up';
 $string['distributing_unallocated_users_started'] = 'The distribution of unallocated users has been started. Please wait some time and have a look at the distribution table.';
