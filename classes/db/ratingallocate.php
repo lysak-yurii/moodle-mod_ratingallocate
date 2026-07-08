@@ -97,4 +97,8 @@ class ratingallocate {
      * Status of the most recent algorithm run.
      */
     const ALGORITHMSTATUS = 'algorithmstatus';
+    /**
+     * User profile field the allocation balances groups across ('' = off, 'department', 'institution').
+     */
+    const DIVERSITYFIELD = 'diversityfield';
 }

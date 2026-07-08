@@ -1099,6 +1099,7 @@ class ratingallocate {
                 ACTION_SHOW_RATINGS_AND_ALLOCATION_TABLE
             );
 
+            $output .= $this->render_diversity_coverage_notice();
             $output .= $renderer->ratings_table_for_ratingallocate(
                 $this->get_rateable_choices(),
                 $this->get_ratings_for_rateable_choices(),
@@ -1143,6 +1144,7 @@ class ratingallocate {
                 ACTION_SHOW_ALLOCATION_TABLE
             );
 
+            $output .= $this->render_diversity_coverage_notice();
             $output .= $renderer->allocation_table_for_ratingallocate($this);
 
             // Logging.
@@ -1516,9 +1518,22 @@ class ratingallocate {
         $this->origdbrecord->algorithmstarttime = time();
         $this->db->update_record(this_db\ratingallocate::TABLE, $this->origdbrecord);
 
-        $distributor = new solver_edmonds_karp();
         $timestart = microtime(true);
-        $distributor->distribute_users($this);
+        try {
+            if ($this->get_diversity_field() !== '') {
+                // Department-aware complete allocation: everyone placed, every group filled and balanced.
+                $distributor = new \mincost_lowerbound_distributor();
+                $distributor->distribute_users($this);
+            } else {
+                $distributor = new solver_edmonds_karp();
+                $distributor->distribute_users($this);
+            }
+        } catch (\Throwable $e) {
+            // Mark the run as failed so the activity is not wedged in the "running" state, then
+            // surface the (localised) reason, e.g. group capacities too small for every student.
+            $this->set_algorithm_failed();
+            throw $e;
+        }
 
         $completion = new completion_info($this->course);
         $raters = $this->get_raters_in_course();
@@ -1534,6 +1549,129 @@ class ratingallocate {
         $this->db->update_record(this_db\ratingallocate::TABLE, $this->origdbrecord);
 
         return $timeneeded;
+    }
+
+    /**
+     * The user profile field this instance balances groups across, or '' when department-aware
+     * allocation is disabled. Only 'department' and 'institution' are supported.
+     *
+     * @return string
+     */
+    public function get_diversity_field() {
+        $field = $this->ratingallocate->{this_db\ratingallocate::DIVERSITYFIELD} ?? '';
+        return in_array($field, ['department', 'institution'], true) ? $field : '';
+    }
+
+    /**
+     * Build a coverage report for department-aware allocation from the stored allocation.
+     *
+     * Each entry explains why a group/field-value combination could not be covered:
+     *  - 'impossible': the field value has fewer students than there are groups (pigeonhole);
+     *  - 'blocked':    no student with that value was eligible (by group restrictions) for a group.
+     *
+     * @return array list of ['type' => string, 'a' => stdClass] messages (empty when fully covered/off)
+     */
+    public function get_diversity_coverage_report() {
+        $field = $this->get_diversity_field();
+        if ($field === '') {
+            return [];
+        }
+
+        $choices = $this->get_rateable_choices();
+        $choiceids = array_keys($choices);
+        $numgroups = count($choiceids);
+        if ($numgroups === 0) {
+            return [];
+        }
+
+        $raters = $this->get_raters_in_course();
+        $deptof = [];
+        $deptusers = [];
+        foreach ($raters as $rater) {
+            $value = isset($rater->{$field}) ? trim((string) $rater->{$field}) : '';
+            $deptof[$rater->id] = $value;
+            if ($value !== '') {
+                $deptusers[$value][] = $rater->id;
+            }
+        }
+        if (empty($deptusers)) {
+            return [];
+        }
+
+        // Which field values are present in each choice, from the stored allocation.
+        $present = [];
+        foreach ($this->get_allocations() as $allocation) {
+            $value = $deptof[$allocation->userid] ?? '';
+            if ($value !== '') {
+                $present[$allocation->choiceid][$value] = true;
+            }
+        }
+
+        $eligibility = $this->get_choice_eligibility($choices, array_keys($deptof));
+
+        $report = [];
+        foreach ($deptusers as $value => $members) {
+            $covered = 0;
+            foreach ($choiceids as $choiceid) {
+                if (!empty($present[$choiceid][$value])) {
+                    $covered++;
+                }
+            }
+            if ($covered >= $numgroups) {
+                continue;
+            }
+            if (count($members) < $numgroups) {
+                $report[] = [
+                    'type' => 'impossible',
+                    'a' => (object) ['value' => $value, 'count' => count($members), 'groups' => $numgroups],
+                ];
+            }
+        }
+
+        // Groups no student of a value could reach because of group (usegroups) visibility.
+        if ($eligibility['restricted']) {
+            foreach ($deptusers as $value => $members) {
+                $reachable = [];
+                foreach ($members as $userid) {
+                    foreach (($eligibility['map'][$userid] ?? []) as $choiceid) {
+                        $reachable[$choiceid] = true;
+                    }
+                }
+                foreach ($choiceids as $choiceid) {
+                    if (!isset($reachable[$choiceid])) {
+                        $report[] = [
+                            'type' => 'blocked',
+                            'a' => (object) ['value' => $value, 'choice' => $choices[$choiceid]->title],
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $report;
+    }
+
+    /**
+     * Render the department-aware coverage report as a warning notification, or '' when everything
+     * that can be covered is covered (or the feature is off).
+     *
+     * @return string HTML
+     */
+    public function render_diversity_coverage_notice() {
+        global $OUTPUT;
+
+        $report = $this->get_diversity_coverage_report();
+        if (empty($report)) {
+            return '';
+        }
+
+        $items = [];
+        foreach ($report as $entry) {
+            $items[] = get_string('diversityreport_' . $entry['type'], 'ratingallocate', $entry['a']);
+        }
+        $message = html_writer::tag('strong', get_string('diversityreport_heading', 'ratingallocate')) .
+            html_writer::alist($items);
+        return $OUTPUT->notification($message, \core\output\notification::NOTIFY_WARNING);
     }
 
     /**
@@ -2199,6 +2337,45 @@ class ratingallocate {
         }
 
         return $filteredchoices;
+    }
+
+    /**
+     * Determine which choices each user may be allocated to, respecting choice group visibility
+     * (usegroups). Unlike {@see filter_choices_by_groups()} this does not short-circuit on the
+     * current user's capabilities, so it is safe to call while an administrator runs the algorithm.
+     *
+     * @param array $choices choice records keyed by id (must expose 'usegroups')
+     * @param int[] $userids the users to compute eligibility for
+     * @return array ['map' => array(userid => [choiceid, ...]), 'restricted' => bool]
+     */
+    public function get_choice_eligibility($choices, $userids) {
+        $choicegroups = [];
+        $anyusegroups = false;
+        foreach ($choices as $choiceid => $choice) {
+            if (!empty($choice->usegroups)) {
+                $anyusegroups = true;
+                $choicegroups[$choiceid] = array_keys($this->get_choice_groups($choiceid));
+            }
+        }
+
+        $allchoiceids = array_keys($choices);
+        $map = [];
+        foreach ($userids as $userid) {
+            if (!$anyusegroups) {
+                $map[$userid] = $allchoiceids;
+                continue;
+            }
+            $usergroups = groups_get_user_groups($this->course->id, $userid)[0];
+            $allowed = [];
+            foreach ($choices as $choiceid => $choice) {
+                if (empty($choice->usegroups) || array_intersect($usergroups, $choicegroups[$choiceid])) {
+                    $allowed[] = $choiceid;
+                }
+            }
+            $map[$userid] = $allowed;
+        }
+
+        return ['map' => $map, 'restricted' => $anyusegroups];
     }
 
     /**

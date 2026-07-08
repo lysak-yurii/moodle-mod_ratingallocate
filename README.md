@@ -7,6 +7,28 @@ This may be an alternative to the choice activity or other first-come-first-serv
 
 This plugin is based on previous work by Stefan Koegel and Alexander Bias, University of Ulm.
 
+Maintained fork
+===============
+
+**This is a maintained fork of [learnweb/moodle-mod_ratingallocate](https://github.com/learnweb/moodle-mod_ratingallocate).**
+It adds an opt-in *department-aware complete allocation* feature (see CHANGES.md).
+
+> ⚠️ **Do not reinstall or update this plugin from the Moodle plugin directory
+> (moodle.org/plugins).** Doing so overwrites the fork and removes the feature.
+
+To pull in upstream fixes, merge them into this fork instead of overwriting:
+
+```sh
+git remote add upstream https://github.com/learnweb/moodle-mod_ratingallocate.git  # once
+git fetch upstream
+git merge --no-ff upstream/main   # resolve any conflicts, then bump version.php and re-tag
+```
+
+The production Moodle server should track a **tag** of this fork (e.g.
+`v2026070300-diversity.1`), not a moving branch, so deploys are pinned to a
+known-good version. After checking out a new tag, run
+`php admin/cli/upgrade.php` to apply `db/upgrade.php`.
+
 Installation
 ============
 This is an activity plugin and should go into ``mod/ratingallocate``.

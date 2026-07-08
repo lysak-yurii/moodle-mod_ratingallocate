@@ -59,4 +59,16 @@ if ($ADMIN->fulltree) {
         new lang_string('configalgorithmforcebackground', 'ratingallocate'),
         0
     ));
+
+    $settings->add(new admin_setting_configselect(
+        'ratingallocate_diversityfield_default',
+        new lang_string('diversityfield_default', 'ratingallocate'),
+        new lang_string('configdiversityfield_default', 'ratingallocate'),
+        '',
+        [
+            '' => new lang_string('diversityfield_off', 'ratingallocate'),
+            'department' => new lang_string('department'),
+            'institution' => new lang_string('institution'),
+        ]
+    ));
 }
