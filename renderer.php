@@ -84,11 +84,15 @@ class mod_ratingallocate_renderer extends plugin_renderer_base {
      * @param int $coursemoduleid
      * @param string $status
      * @param int $undistributeduserscount
+     * @param bool $balancingactive whether the activity balances groups by a profile field. Both
+     *        "distribute unallocated" actions then run the same department-aware top-up, so only one
+     *        button is offered.
      * @return string
      * @throws coding_exception
      * @throws moodle_exception
      */
-    public function render_ratingallocate_allocation_status($coursemoduleid, $status, $undistributeduserscount) {
+    public function render_ratingallocate_allocation_status($coursemoduleid, $status, $undistributeduserscount,
+            $balancingactive = false) {
 
         $output = '';
         $output .= $this->output->container_start('allocationstatustable');
@@ -164,19 +168,23 @@ class mod_ratingallocate_renderer extends plugin_renderer_base {
                     get_string('distribute_unallocated_equally_confirm', RATINGALLOCATE_MOD_NAME)
                 ));
 
-                $distributeunallocatedurlfill = new moodle_url(
-                    $this->page->url,
-                    ['action' => ACTION_DISTRIBUTE_UNALLOCATED_FILL]
-                );
-                $buttondistfill = new single_button(
-                    $distributeunallocatedurlfill,
-                    get_string('distributefill', RATINGALLOCATE_MOD_NAME),
-                    'get'
-                );
-                $buttondistfill->class = 'ratingallocate_front_page_buttons';
-                $buttondistfill->add_action(new confirm_action(
-                    get_string('distribute_unallocated_fill_confirm', RATINGALLOCATE_MOD_NAME)
-                ));
+                $filloutput = '';
+                if (!$balancingactive) {
+                    $distributeunallocatedurlfill = new moodle_url(
+                        $this->page->url,
+                        ['action' => ACTION_DISTRIBUTE_UNALLOCATED_FILL]
+                    );
+                    $buttondistfill = new single_button(
+                        $distributeunallocatedurlfill,
+                        get_string('distributefill', RATINGALLOCATE_MOD_NAME),
+                        'get'
+                    );
+                    $buttondistfill->class = 'ratingallocate_front_page_buttons';
+                    $buttondistfill->add_action(new confirm_action(
+                        get_string('distribute_unallocated_fill_confirm', RATINGALLOCATE_MOD_NAME)
+                    ));
+                    $filloutput = $this->render($buttondistfill);
+                }
 
                 // Add Amount of users that are unallocated and buttons to allocate them manually.
                 $this->add_table_row_triple(
@@ -188,7 +196,7 @@ class mod_ratingallocate_renderer extends plugin_renderer_base {
                     ) .
                     $this->help_icon('distribution_description', RATINGALLOCATE_MOD_NAME),
                     $this->render($buttondisteq),
-                    $this->render($buttondistfill)
+                    $filloutput
                 );
             } else if ($isdistributionrunning) {
                 // Add empty row.

@@ -1327,7 +1327,8 @@ class ratingallocate {
             $output .= $renderer->render_ratingallocate_allocation_status(
                 $this->coursemodule->id,
                 $status,
-                $undistributeduserscount
+                $undistributeduserscount,
+                $this->get_diversity_field() !== ''
             );
             $output .= $renderer->render_ratingallocate_publish_allocation(
                 $this->ratingallocateid,
