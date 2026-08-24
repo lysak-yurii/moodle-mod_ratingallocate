@@ -222,7 +222,25 @@ class ratingallocate {
                 raise_memory_limit(MEMORY_EXTRA);
                 core_php_time_limit::raise();
                 // Distribute choices.
-                $timeneeded = $this->distribute_choices();
+                try {
+                    $timeneeded = $this->distribute_choices();
+                } catch (moodle_exception $e) {
+                    if (!in_array($e->errorcode, ['diversityinfeasible_capacity', 'diversityinfeasible'], true)) {
+                        // Not something the teacher configured wrong - let it surface as usual.
+                        throw $e;
+                    }
+                    // A setting the teacher can correct: explain it on the activity page rather than
+                    // on a fatal error page. The run has already been marked as failed.
+                    redirect(
+                        new moodle_url(
+                            '/mod/ratingallocate/view.php',
+                            ['id' => $this->coursemodule->id]
+                        ),
+                        $e->getMessage(),
+                        null,
+                        notification::NOTIFY_ERROR
+                    );
+                }
 
                 // Logging.
                 $event = distribution_triggered::create_simple(
@@ -1287,6 +1305,8 @@ class ratingallocate {
         if (has_capability('mod/ratingallocate:start_distribution', $this->context)) {
             $undistributeduserscount = count($this->get_undistributed_users());
 
+            // Flag a capacity problem before the teacher runs into it.
+            $output .= $this->render_diversity_capacity_warning();
             $output .= $renderer->render_ratingallocate_allocation_status(
                 $this->coursemodule->id,
                 $status,
@@ -1710,6 +1730,40 @@ class ratingallocate {
         }
         $message = html_writer::tag('strong', get_string('diversityreport_heading', 'ratingallocate')) .
             html_writer::alist($items);
+        return $OUTPUT->notification($message, \core\output\notification::NOTIFY_WARNING);
+    }
+
+    /**
+     * Warn up front when the choices cannot hold everybody, so the teacher can fix the sizes before
+     * running the algorithm instead of running into the error afterwards.
+     *
+     * @return string HTML, or '' when there is room for everyone (or the feature is off)
+     */
+    public function render_diversity_capacity_warning() {
+        global $OUTPUT;
+
+        if ($this->get_diversity_field() === '') {
+            return '';
+        }
+
+        $capacity = 0;
+        foreach ($this->get_rateable_choices() as $choice) {
+            $capacity += (int) $choice->maxsize;
+        }
+
+        $participants = count($this->get_raters_in_course());
+        if ($this->get_diversity_skip_unrated()) {
+            $participants = count($this->get_userids_with_ratings());
+        }
+        if ($participants === 0 || $capacity >= $participants) {
+            return '';
+        }
+
+        $message = get_string('diversitycapacitywarning', 'ratingallocate', (object) [
+            'capacity' => $capacity,
+            'users' => $participants,
+            'missing' => $participants - $capacity,
+        ]);
         return $OUTPUT->notification($message, \core\output\notification::NOTIFY_WARNING);
     }
 
