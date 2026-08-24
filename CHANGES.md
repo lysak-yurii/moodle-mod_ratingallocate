@@ -1,6 +1,21 @@
 CHANGELOG
 =========
 
+Ratingallocate 5.0.0 +diversity.3 (fork)
+------------------
+
+- "Distribute unallocated" now goes through the same department-aware solver
+  while "Balance groups by" is set, instead of the upstream fill-up logic which
+  ignores the profile field. Everyone already allocated stays where they are;
+  only the leftovers are placed, into the groups still missing their value.
+  Measured on a 428-student course after a voters-only run: 264 covered pairs
+  with the old fill, 274 with this one, and group sizes 12-13 instead of 9-13.
+- `compute_distribution()` takes an optional `$fixed` argument (choiceid =>
+  already seated userids) for this; without it nothing changes.
+- Hide "Distribute by filling up" while balancing is on: both actions run the
+  same top-up there, so offering two buttons for one behaviour only confuses.
+  With balancing off, both are shown and behave as before.
+
 Ratingallocate 5.0.0 +diversity.2 (fork)
 ------------------
 

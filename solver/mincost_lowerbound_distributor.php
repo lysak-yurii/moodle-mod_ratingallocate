@@ -154,11 +154,15 @@ class mincost_lowerbound_distributor {
      * @param array $deptof map userid => field value ('' means "no value", filled but not a coverage target)
      * @param array|null $eligibility map userid => list of choiceids the user may be placed in;
      *        null means every user is eligible for every choice
+     * @param array|null $fixed map choiceid => list of userids already placed in that choice, for a
+     *        top-up run. Their seats are subtracted from the target sizes, and a (choice, field value)
+     *        pair they already cover is not rewarded again. $deptof must cover these users as well.
+     *        Only the users in $userids are placed; the ones in $fixed are never moved.
      * @return array [ 'distribution' => array(choiceid => [userid, ...]), 'report' => array of messages ]
      * @throws \moodle_exception when the configured capacities cannot accommodate every student
      */
     public function compute_distribution(array $choicerecords, array $ratings, array $userids,
-            array $deptof, ?array $eligibility = null) {
+            array $deptof, ?array $eligibility = null, ?array $fixed = null) {
 
         $choices = [];
         foreach ($choicerecords as $record) {
@@ -172,8 +176,30 @@ class mincost_lowerbound_distributor {
             return ['distribution' => array_fill_keys($choiceids, []), 'report' => []];
         }
 
-        // Balanced target sizes: aim for floor(N/K)..ceil(N/K), capped by each choice's configured maxsize.
-        $baseshare = intdiv($n, $k);
+        // Seats that are already taken, per choice, when topping up an existing allocation.
+        $seated = array_fill_keys($choiceids, 0);
+        $fixedcovered = [];
+        if ($fixed !== null) {
+            foreach ($fixed as $cid => $members) {
+                if (!isset($choices[$cid])) {
+                    continue;
+                }
+                $seated[$cid] = count($members);
+                foreach ($members as $uid) {
+                    $dept = isset($deptof[$uid]) ? trim((string) $deptof[$uid]) : '';
+                    if ($dept !== '') {
+                        // Already represented here, so seating another one of them covers nothing new.
+                        $fixedcovered[$cid . '|' . $dept] = true;
+                    }
+                }
+            }
+        }
+
+        // Balanced target sizes for the whole cohort: floor(T/K)..ceil(T/K), capped by each choice's
+        // configured maxsize. On a top-up, T counts the users already seated as well, so the targets
+        // describe the finished allocation rather than this run alone.
+        $total = $n + array_sum($seated);
+        $baseshare = intdiv($total, $k);
         $minsize = [];
         $maxsize = [];
         $totalmax = 0;
@@ -181,15 +207,18 @@ class mincost_lowerbound_distributor {
             $cap = (int) $choices[$cid]->maxsize;
             $max = min($baseshare + 1, $cap);
             $max = max($max, 0);
-            $minsize[$cid] = min($baseshare, $max);
-            $maxsize[$cid] = $max;
-            $totalmax += $max;
+            $min = min($baseshare, $max);
+            // What is left to fill in this run.
+            $maxsize[$cid] = max($max - $seated[$cid], 0);
+            $minsize[$cid] = max($min - $seated[$cid], 0);
+            $minsize[$cid] = min($minsize[$cid], $maxsize[$cid]);
+            $totalmax += $maxsize[$cid];
         }
 
         // Feasibility guard: there must be room for everyone. A clear message beats a cryptic solver failure.
         if ($totalmax < $n) {
-            throw new \moodle_exception('diversityinfeasible_capacity', 'ratingallocate', '',
-                (object) ['capacity' => $totalmax, 'users' => $n]);
+            throw new \moodle_exception($fixed === null ? 'diversityinfeasible_capacity' : 'diversityinfeasible_topup',
+                'ratingallocate', '', (object) ['capacity' => $totalmax, 'users' => $n]);
         }
 
         // Ratings, keyed by "userid|choiceid" for O(1) lookup, and the maximum rating value.
@@ -235,6 +264,18 @@ class mincost_lowerbound_distributor {
                 $deptusers[$dept][] = $uid;
             }
         }
+        // The report talks about the whole cohort, so on a top-up the seated members count too -
+        // otherwise a large programme would look "impossible" just because few of it are left to place.
+        if ($fixed !== null) {
+            foreach ($fixed as $members) {
+                foreach ($members as $uid) {
+                    $dept = isset($deptof[$uid]) ? trim((string) $deptof[$uid]) : '';
+                    if ($dept !== '') {
+                        $deptusers[$dept][] = $uid;
+                    }
+                }
+            }
+        }
 
         // Source -> user: exactly one unit (every student assigned).
         foreach ($userids as $uid) {
@@ -262,7 +303,11 @@ class mincost_lowerbound_distributor {
                         $nodechoice[$node] = $cid;
                         // (choice, dept) -> choice: first member free, further members of the same dept
                         // in the same group cost BONUS (equivalently: reward the first = maximise coverage).
-                        $this->add_edge($node, $choicenode[$cid], 1, 0);
+                        // On a top-up, a pair the seated members already cover gets no free edge - it is
+                        // not a discovery any more.
+                        if (!isset($fixedcovered[$key])) {
+                            $this->add_edge($node, $choicenode[$cid], 1, 0);
+                        }
                         $this->add_edge($node, $choicenode[$cid], self::INF, $bonus);
                     }
                     $this->add_edge($usernode[$uid], $cdnode[$key], 1, $cost);
@@ -312,7 +357,8 @@ class mincost_lowerbound_distributor {
             }
         }
 
-        $report = $this->build_coverage_report($choiceids, $cdnode, $choicenode, $deptusers, $eligibility);
+        $report = $this->build_coverage_report($choiceids, $cdnode, $choicenode, $deptusers, $eligibility,
+            $fixedcovered);
 
         return ['distribution' => $distribution, 'report' => $report];
     }
@@ -413,10 +459,12 @@ class mincost_lowerbound_distributor {
      * @param array $choicenode map choiceid => node id
      * @param array $deptusers map dept => list of userids
      * @param array|null $eligibility map userid => list of choiceids, or null for "everyone everywhere"
+     * @param array $fixedcovered set of "choiceid|value" pairs already covered by members seated
+     *        before this run
      * @return array list of ['type' => impossible|blocked, 'a' => stdClass] messages
      */
     private function build_coverage_report(array $choiceids, array $cdnode, array $choicenode,
-            array $deptusers, ?array $eligibility) {
+            array $deptusers, ?array $eligibility, array $fixedcovered = []) {
         $k = count($choiceids);
         $report = [];
 
@@ -426,7 +474,9 @@ class mincost_lowerbound_distributor {
             $coveredgroups = 0;
             foreach ($choiceids as $cid) {
                 $key = $cid . '|' . $dept;
-                if (isset($cdnode[$key]) && $this->flow_into_choice($cdnode[$key], $choicenode[$cid]) > 0) {
+                if (isset($fixedcovered[$key])) {
+                    $coveredgroups++;
+                } else if (isset($cdnode[$key]) && $this->flow_into_choice($cdnode[$key], $choicenode[$cid]) > 0) {
                     $coveredgroups++;
                 }
             }
@@ -480,6 +530,56 @@ class mincost_lowerbound_distributor {
             }
         }
         return $flow;
+    }
+
+    /**
+     * Place the participants who have no allocation yet, without moving anyone who already has one.
+     *
+     * Used for the "distribute unallocated users" actions while balancing by a profile field is on:
+     * the seated members are handed to the solver as fixed, so the leftovers are steered towards the
+     * groups that are still missing their study programme instead of wherever there happens to be room.
+     *
+     * @param ratingallocate $ratingallocate
+     * @return int the number of participants placed
+     */
+    public function top_up_users(ratingallocate $ratingallocate) {
+        $field = $ratingallocate->get_diversity_field();
+
+        $choicerecords = $ratingallocate->get_rateable_choices();
+        $ratings = $ratingallocate->get_ratings_for_rateable_choices();
+        shuffle($ratings);
+
+        $deptof = [];
+        foreach ($ratingallocate->get_raters_in_course() as $rater) {
+            $deptof[$rater->id] = isset($rater->{$field}) ? trim((string) $rater->{$field}) : '';
+        }
+
+        $fixed = [];
+        foreach ($ratingallocate->get_allocations() as $allocation) {
+            $fixed[$allocation->choiceid][] = $allocation->userid;
+        }
+
+        $userids = array_values($ratingallocate->get_undistributed_users());
+        if (empty($userids)) {
+            return 0;
+        }
+
+        $eligibility = $ratingallocate->get_choice_eligibility($choicerecords, $userids);
+
+        $result = $this->compute_distribution($choicerecords, $ratings, $userids, $deptof,
+            $eligibility['restricted'] ? $eligibility['map'] : null, $fixed);
+
+        $placed = 0;
+        $transaction = $ratingallocate->db->start_delegated_transaction();
+        foreach ($result['distribution'] as $choiceid => $users) {
+            foreach ($users as $userid) {
+                $ratingallocate->add_allocation($choiceid, $userid, $ratingallocate->ratingallocate->id);
+                $placed++;
+            }
+        }
+        $transaction->allow_commit();
+
+        return $placed;
     }
 
     /**

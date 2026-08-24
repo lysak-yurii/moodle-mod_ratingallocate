@@ -45,6 +45,8 @@ Gibt es zu einer Ausprägung weniger Teilnehmer/innen als Gruppen, lässt sich r
 $string['diversityfield_off'] = 'Aus (nicht durchmischen)';
 $string['diversityinfeasible'] =
         'Die Verteilung mit Durchmischung konnte nicht alle Teilnehmer/innen zuordnen: Mit den derzeitigen Gruppenbeschränkungen der Wahlmöglichkeiten lässt sich nicht jede Wahlmöglichkeit auf ihre Mindestgröße auffüllen. Prüfen Sie bei den Wahlmöglichkeiten die Einstellung „Sichtbarkeit durch Gruppen eingeschränkt“ und starten Sie die Verteilung anschließend erneut.';
+$string['diversityinfeasible_topup'] =
+        'Für die noch nicht zugeordneten Teilnehmer/innen ist nicht genügend Platz: In den Wahlmöglichkeiten sind {$a->capacity} Plätze frei, zugeordnet werden müssen aber {$a->users} Teilnehmer/innen. Erhöhen Sie die Maximalgrößen der Wahlmöglichkeiten oder legen Sie eine weitere an und verteilen Sie die übrigen Teilnehmer/innen anschließend erneut.';
 $string['diversityinfeasible_capacity'] =
         'Bei der Verteilung mit Durchmischung braucht jede Person einen Platz: Die Maximalgrößen aller aktiven Wahlmöglichkeiten ergeben zusammen nur {$a->capacity} Plätze für {$a->users} Teilnehmer/innen. Erhöhen Sie die Maximalgrößen der Wahlmöglichkeiten oder legen Sie eine weitere Wahlmöglichkeit an und starten Sie die Verteilung anschließend erneut.';
 $string['diversitynocoverage'] =
