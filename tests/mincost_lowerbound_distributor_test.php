@@ -200,4 +200,49 @@ final class mincost_lowerbound_distributor_test extends \basic_testcase {
         $this->assertContains(2, $dist[1], 'restricted student is placed in their only eligible group');
         $this->assertCount(4, $this->assigned_users($dist));
     }
+
+    /**
+     * Only students with a positive rating survive the "skip students without ratings" filter.
+     */
+    public function test_filter_users_with_ratings(): void {
+        $userids = [1, 2, 3, 4];
+        $ratings = [
+            $this->rating(1, 1, 5),
+            $this->rating(2, 1, 0),
+            $this->rating(2, 2, 0),
+            $this->rating(4, 2, 1),
+        ];
+
+        $filtered = \mincost_lowerbound_distributor::filter_users_with_ratings($userids, $ratings);
+
+        $this->assertSame([1, 4], $filtered,
+            'a rating of 0 does not count as taking part, and order is preserved');
+        $this->assertSame($userids, \mincost_lowerbound_distributor::filter_users_with_ratings($userids, [
+            $this->rating(1, 1, 5), $this->rating(2, 1, 3), $this->rating(3, 1, 2), $this->rating(4, 1, 1),
+        ]), 'nobody is dropped when everyone rated');
+        $this->assertSame([], \mincost_lowerbound_distributor::filter_users_with_ratings($userids, []));
+    }
+
+    /**
+     * With the filter applied, the balanced size window follows the smaller population.
+     */
+    public function test_skipping_unrated_shrinks_the_groups(): void {
+        $choices = [$this->choice(1, 10), $this->choice(2, 10)];
+        $userids = [1, 2, 3, 4, 5, 6];
+        $deptof = array_fill_keys($userids, '');
+        // Only four of the six rated anything.
+        $ratings = [
+            $this->rating(1, 1, 2), $this->rating(2, 1, 2),
+            $this->rating(3, 2, 2), $this->rating(4, 2, 2),
+        ];
+
+        $participants = \mincost_lowerbound_distributor::filter_users_with_ratings($userids, $ratings);
+        $solver = new \mincost_lowerbound_distributor();
+        $result = $solver->compute_distribution($choices, $ratings, $participants, $deptof, null);
+        $dist = $result['distribution'];
+
+        $this->assertCount(4, $this->assigned_users($dist), 'only the students who rated are placed');
+        $this->assertCount(2, $dist[1]);
+        $this->assertCount(2, $dist[2]);
+    }
 }

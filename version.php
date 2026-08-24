@@ -25,9 +25,9 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026070300;        // The current module version (Date: YYYYMMDDXX).
+$plugin->version   = 2026082400;        // The current module version (Date: YYYYMMDDXX).
 $plugin->requires  = 2024100700;         // Requires Moodle 4.5 and higher.
 $plugin->maturity  = MATURITY_STABLE;
-$plugin->release   = '5.0.0 (fork: +diversity)';
+$plugin->release   = '5.0.0 (fork: +diversity.2)';
 $plugin->supported  = [405, 501];
 $plugin->component = 'mod_ratingallocate';  // To check on upgrade, that module sits in correct place.

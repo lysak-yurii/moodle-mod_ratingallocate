@@ -248,5 +248,20 @@ function xmldb_ratingallocate_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026070300, 'ratingallocate');
     }
 
+    if ($oldversion < 2026082400) {
+        // Define field diversityskipunrated to be added to ratingallocate.
+        $table = new xmldb_table('ratingallocate');
+        $field = new xmldb_field('diversityskipunrated', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, false, '0',
+            'diversityfield');
+
+        // Conditionally launch add field diversityskipunrated.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Ratingallocate savepoint reached.
+        upgrade_mod_savepoint(true, 2026082400, 'ratingallocate');
+    }
+
     return true;
 }

@@ -132,19 +132,34 @@ $string['distribute_unallocated_equally_confirm'] = 'All currently unallocated u
  The choices will be filled up equally, so all of them have about the same amount of places left.';
 $string['distribute_unallocated_fill_confirm'] = 'All currently unallocated users will be distributed to the choices.
  Each choice will be filled up to its maximum before assigning users to the next choice.';
+$string['diversitycapacitywarning'] =
+        'Balancing by a profile field places every participant, so the choices must have room for everyone. At the moment the maximum sizes of all active choices add up to {$a->capacity} places for {$a->users} participants — {$a->missing} too few. Running the algorithm will stop with an error until you raise the maximum size of some choices (or add another choice).';
 $string['diversityfield'] = 'Balance groups by';
 $string['diversityfield_default'] = 'Default for "Balance groups by"';
 $string['diversityfield_help'] = 'When set, the allocation aims to give every group at least one member of each value of the chosen user profile field (for example, each study programme stored in the Department field), so groups are as mixed as possible.
 
-Turning this on changes how the allocation works: instead of leaving unrated groups empty and some students unallocated, it performs a **complete, balanced allocation** — every student is placed and every group is filled to a balanced size (respecting each choice\'s maximum). Student ratings are still honoured as much as possible; students may be placed into groups they did not rate only when needed to fill every group.
+Turning this on changes how the allocation works: instead of leaving unrated groups empty and some students unallocated, it performs a **complete, balanced allocation** — every participant is placed and every group is filled to a balanced size (respecting each choice\'s maximum). Participants who submitted no rating can be excluded with the "Students without ratings" option below.
+
+The two goals are ranked rather than weighted: the allocation first covers as many group/field-value combinations as it can, and only among those solutions does it make the ratings as good as possible. A student may therefore be placed in a lower-ranked choice — or in a group they did not rate — when that is what puts their study programme into a group that would otherwise not have one.
+
+Since everybody has to fit somewhere, the maximum sizes of all active choices together must be at least the number of participants; otherwise the distribution stops with an error instead of allocating.
 
 If a field value has fewer students than there are groups, it is mathematically impossible to cover every group; the allocation then covers as many groups as possible and reports which groups could not be covered.';
 $string['diversityfield_off'] = 'Off (do not balance)';
-$string['diversityinfeasible_capacity'] = 'Department-aware allocation needs room for every student: the total maximum size of all active groups ({$a->capacity}) is smaller than the number of participants ({$a->users}). Increase the groups\' maximum sizes or reduce participants, then run the distribution again.';
-$string['diversitynocoverage'] = 'Department-aware allocation: {$a} group/department combination(s) could not be covered.';
-$string['diversityreport_impossible'] = 'Field value "{$a->value}" has only {$a->count} student(s) but there are {$a->groups} groups, so at most {$a->count} group(s) can include it.';
+$string['diversityinfeasible'] =
+        'Balancing groups by a profile field could not place every participant: with the current group restrictions on the choices, there is no way to fill every choice to its minimum size. Review the "Restrict visibility by groups" setting of the choices, then run the distribution again.';
+$string['diversityinfeasible_capacity'] = 'Balancing groups by a profile field needs room for every participant: the total maximum size of all active groups ({$a->capacity}) is smaller than the number of participants ({$a->users}). Increase the maximum sizes of the choices, or add another choice, then run the distribution again.';
+$string['diversitynocoverage'] = 'Balancing groups by a profile field: {$a} group/field-value combination(s) could not be covered.';
 $string['diversityreport_blocked'] = 'No student with field value "{$a->value}" was eligible (by group restrictions) for group "{$a->choice}".';
 $string['diversityreport_heading'] = 'Group diversity coverage';
+$string['diversityreport_impossible'] = 'Field value "{$a->value}" has only {$a->count} student(s) but there are {$a->groups} groups, so at most {$a->count} group(s) can include it.';
+$string['diversityskipunrated'] = 'Students without ratings';
+$string['diversityskipunrated_help'] = 'By default every participant is placed, including those who never submitted a rating. Tick this box to allocate only students who rated at least one choice; the others are left unallocated and can be placed afterwards with "Distribute unallocated" or by hand.
+
+Use this for a course rule such as "no rating, no automatic place" — not to protect the students who did rate. It usually makes their result worse: students without ratings are indifferent between all groups, so the algorithm uses them to fill and balance groups, which leaves it free to honour the ratings of everyone else. Taking them out of the run means students who did rate have to fill and balance the groups instead.
+
+Note that group sizes are balanced across whoever takes part in the run, so with fewer participants the groups become correspondingly smaller.';
+$string['diversityskipunrated_label'] = 'Leave students who did not rate unallocated';
 $string['distributeequally'] = 'Distribute equally';
 $string['distributefill'] = 'Distribute by filling up';
 $string['distributing_unallocated_users_started'] = 'The distribution of unallocated users has been started. Please wait some time and have a look at the distribution table.';

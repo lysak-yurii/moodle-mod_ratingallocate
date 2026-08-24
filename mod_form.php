@@ -164,6 +164,15 @@ class mod_ratingallocate_mod_form extends moodleform_mod {
         $mform->setType($elementname, PARAM_ALPHA);
         $mform->setDefault($elementname, $CFG->ratingallocate_diversityfield_default ?? '');
 
+        // Only meaningful together with the option above: leave non-raters out of the allocation.
+        $elementname = 'diversityskipunrated';
+        $mform->addElement('advcheckbox', $elementname, get_string($elementname, self::MOD_NAME),
+            get_string($elementname . '_label', self::MOD_NAME), [], [0, 1]);
+        $mform->addHelpButton($elementname, $elementname, self::MOD_NAME);
+        $mform->setType($elementname, PARAM_INT);
+        $mform->setDefault($elementname, 0);
+        $mform->hideIf($elementname, 'diversityfield', 'eq', '');
+
         $headerid = 'strategy_fieldset';
         $mform->addElement('header', $headerid, get_string('strategyspecificoptions', RATINGALLOCATE_MOD_NAME));
         $mform->setExpanded($headerid);

@@ -26,6 +26,7 @@
         <FIELD NAME="completionvote" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Wether completion on vote is enabled"/>
         <FIELD NAME="completionallocation" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Wether completion on allocation is enabled"/>
         <FIELD NAME="diversityfield" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="User profile field to balance groups across ('' = off, 'department', 'institution'). When set, allocation switches to the complete balanced diversity-aware engine."/>
+        <FIELD NAME="diversityskipunrated" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Diversity-aware allocation only: when 1, participants who submitted no rating are left unallocated instead of being placed."/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

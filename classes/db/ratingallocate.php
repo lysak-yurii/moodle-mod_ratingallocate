@@ -101,4 +101,8 @@ class ratingallocate {
      * User profile field the allocation balances groups across ('' = off, 'department', 'institution').
      */
     const DIVERSITYFIELD = 'diversityfield';
+    /**
+     * Whether diversity-aware allocation leaves participants without any rating unallocated.
+     */
+    const DIVERSITYSKIPUNRATED = 'diversityskipunrated';
 }

@@ -1563,6 +1563,36 @@ class ratingallocate {
     }
 
     /**
+     * Whether diversity-aware allocation should skip participants who submitted no rating at all.
+     *
+     * Off by default: placing everyone gives the students who did rate a better result, because
+     * indifferent participants absorb the balancing work. Only meaningful while diversity-aware
+     * allocation is switched on.
+     *
+     * @return bool
+     */
+    public function get_diversity_skip_unrated() {
+        // Note: the db wrapper has no __isset(), so empty()/isset() on its properties are always
+        // "unset" no matter what the record holds. Read the value, then cast.
+        $value = $this->ratingallocate->{this_db\ratingallocate::DIVERSITYSKIPUNRATED} ?? 0;
+        return (bool) (int) $value;
+    }
+
+    /**
+     * Ids of all participants who rated at least one rateable choice.
+     *
+     * @return int[]
+     */
+    public function get_userids_with_ratings() {
+        $sql = 'SELECT DISTINCT r.userid
+                  FROM {ratingallocate_ratings} r
+                  JOIN {ratingallocate_choices} c ON c.id = r.choiceid
+                 WHERE c.ratingallocateid = :ratingallocateid
+                       AND r.rating > 0';
+        return $this->db->get_fieldset_sql($sql, ['ratingallocateid' => $this->ratingallocateid]);
+    }
+
+    /**
      * Build a coverage report for department-aware allocation from the stored allocation.
      *
      * Each entry explains why a group/field-value combination could not be covered:
@@ -1585,9 +1615,18 @@ class ratingallocate {
         }
 
         $raters = $this->get_raters_in_course();
+        // Report on the same population the allocation ran on, so skipped non-raters do not show up
+        // as coverage the algorithm supposedly failed to achieve.
+        $participates = null;
+        if ($this->get_diversity_skip_unrated()) {
+            $participates = array_flip($this->get_userids_with_ratings());
+        }
         $deptof = [];
         $deptusers = [];
         foreach ($raters as $rater) {
+            if ($participates !== null && !isset($participates[$rater->id])) {
+                continue;
+            }
             $value = isset($rater->{$field}) ? trim((string) $rater->{$field}) : '';
             $deptof[$rater->id] = $value;
             if ($value !== '') {
