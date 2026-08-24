@@ -222,7 +222,25 @@ class ratingallocate {
                 raise_memory_limit(MEMORY_EXTRA);
                 core_php_time_limit::raise();
                 // Distribute choices.
-                $timeneeded = $this->distribute_choices();
+                try {
+                    $timeneeded = $this->distribute_choices();
+                } catch (moodle_exception $e) {
+                    if (!in_array($e->errorcode, ['diversityinfeasible_capacity', 'diversityinfeasible'], true)) {
+                        // Not something the teacher configured wrong - let it surface as usual.
+                        throw $e;
+                    }
+                    // A setting the teacher can correct: explain it on the activity page rather than
+                    // on a fatal error page. The run has already been marked as failed.
+                    redirect(
+                        new moodle_url(
+                            '/mod/ratingallocate/view.php',
+                            ['id' => $this->coursemodule->id]
+                        ),
+                        $e->getMessage(),
+                        null,
+                        notification::NOTIFY_ERROR
+                    );
+                }
 
                 // Logging.
                 $event = distribution_triggered::create_simple(
@@ -1287,6 +1305,8 @@ class ratingallocate {
         if (has_capability('mod/ratingallocate:start_distribution', $this->context)) {
             $undistributeduserscount = count($this->get_undistributed_users());
 
+            // Flag a capacity problem before the teacher runs into it.
+            $output .= $this->render_diversity_capacity_warning();
             $output .= $renderer->render_ratingallocate_allocation_status(
                 $this->coursemodule->id,
                 $status,
@@ -1563,6 +1583,36 @@ class ratingallocate {
     }
 
     /**
+     * Whether diversity-aware allocation should skip participants who submitted no rating at all.
+     *
+     * Off by default: placing everyone gives the students who did rate a better result, because
+     * indifferent participants absorb the balancing work. Only meaningful while diversity-aware
+     * allocation is switched on.
+     *
+     * @return bool
+     */
+    public function get_diversity_skip_unrated() {
+        // Note: the db wrapper has no __isset(), so empty()/isset() on its properties are always
+        // "unset" no matter what the record holds. Read the value, then cast.
+        $value = $this->ratingallocate->{this_db\ratingallocate::DIVERSITYSKIPUNRATED} ?? 0;
+        return (bool) (int) $value;
+    }
+
+    /**
+     * Ids of all participants who rated at least one rateable choice.
+     *
+     * @return int[]
+     */
+    public function get_userids_with_ratings() {
+        $sql = 'SELECT DISTINCT r.userid
+                  FROM {ratingallocate_ratings} r
+                  JOIN {ratingallocate_choices} c ON c.id = r.choiceid
+                 WHERE c.ratingallocateid = :ratingallocateid
+                       AND r.rating > 0';
+        return $this->db->get_fieldset_sql($sql, ['ratingallocateid' => $this->ratingallocateid]);
+    }
+
+    /**
      * Build a coverage report for department-aware allocation from the stored allocation.
      *
      * Each entry explains why a group/field-value combination could not be covered:
@@ -1585,9 +1635,18 @@ class ratingallocate {
         }
 
         $raters = $this->get_raters_in_course();
+        // Report on the same population the allocation ran on, so skipped non-raters do not show up
+        // as coverage the algorithm supposedly failed to achieve.
+        $participates = null;
+        if ($this->get_diversity_skip_unrated()) {
+            $participates = array_flip($this->get_userids_with_ratings());
+        }
         $deptof = [];
         $deptusers = [];
         foreach ($raters as $rater) {
+            if ($participates !== null && !isset($participates[$rater->id])) {
+                continue;
+            }
             $value = isset($rater->{$field}) ? trim((string) $rater->{$field}) : '';
             $deptof[$rater->id] = $value;
             if ($value !== '') {
@@ -1671,6 +1730,40 @@ class ratingallocate {
         }
         $message = html_writer::tag('strong', get_string('diversityreport_heading', 'ratingallocate')) .
             html_writer::alist($items);
+        return $OUTPUT->notification($message, \core\output\notification::NOTIFY_WARNING);
+    }
+
+    /**
+     * Warn up front when the choices cannot hold everybody, so the teacher can fix the sizes before
+     * running the algorithm instead of running into the error afterwards.
+     *
+     * @return string HTML, or '' when there is room for everyone (or the feature is off)
+     */
+    public function render_diversity_capacity_warning() {
+        global $OUTPUT;
+
+        if ($this->get_diversity_field() === '') {
+            return '';
+        }
+
+        $capacity = 0;
+        foreach ($this->get_rateable_choices() as $choice) {
+            $capacity += (int) $choice->maxsize;
+        }
+
+        $participants = count($this->get_raters_in_course());
+        if ($this->get_diversity_skip_unrated()) {
+            $participants = count($this->get_userids_with_ratings());
+        }
+        if ($participants === 0 || $capacity >= $participants) {
+            return '';
+        }
+
+        $message = get_string('diversitycapacitywarning', 'ratingallocate', (object) [
+            'capacity' => $capacity,
+            'users' => $participants,
+            'missing' => $participants - $capacity,
+        ]);
         return $OUTPUT->notification($message, \core\output\notification::NOTIFY_WARNING);
     }
 

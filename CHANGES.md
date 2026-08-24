@@ -1,6 +1,34 @@
 CHANGELOG
 =========
 
+Ratingallocate 5.0.0 +diversity.2 (fork)
+------------------
+
+- Add per-activity option `diversityskipunrated` ("Students without ratings"),
+  shown only while "Balance groups by" is set. When ticked, participants who
+  submitted no rating are left unallocated instead of being placed, and can be
+  distributed afterwards with "Distribute unallocated" or by hand. Default off.
+- The coverage report now describes the population the allocation actually ran
+  on, so skipped non-raters are not counted as missed coverage.
+- Rewrite the "Balance groups by" help: it no longer claims unconditionally that
+  every student is placed, states that coverage is ranked *above* ratings rather
+  than weighted against them, and mentions the total-capacity requirement.
+- Warn on the activity page *before* the algorithm is started when the choices
+  cannot hold every participant, naming the shortfall.
+- Report the two "not enough room" conditions as an error notification on the
+  activity page instead of a fatal Moodle error page. Other exceptions still
+  surface as before, so genuine faults are not hidden.
+- Add the missing `diversityinfeasible` string: the solver could throw it, but it
+  had no English text and would have been shown as `[[diversityinfeasible]]`.
+- Add `lang/de` with German translations of the fork's own strings. The official
+  German pack is loaded afterwards and still wins for every string it defines.
+- Sort the `diversity*` strings alphabetically (moodle-cs lang file ordering).
+- Note for site admins: on real data, skipping non-raters made the result *worse*
+  for the students who did rate (measured on a 428-student course: 173 → 146
+  first choices, 5 → 38 students placed in a group they had not rated). The
+  option exists for course rules such as "no rating, no automatic place", not as
+  a quality improvement; the help text says so.
+
 Ratingallocate 5.0.0 +diversity.1 (fork)
 ------------------
 

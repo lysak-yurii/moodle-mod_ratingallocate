@@ -124,6 +124,28 @@ class mincost_lowerbound_distributor {
     }
 
     /**
+     * Keep only those users who gave at least one positive rating.
+     *
+     * A rating of 0 (or a row with no rating at all) never becomes an edge in the graph, so it does
+     * not count as taking part here either.
+     *
+     * @param int[] $userids
+     * @param array $ratings rating records; each needs ->userid and ->rating
+     * @return int[] the subset of $userids that rated something, in the original order
+     */
+    public static function filter_users_with_ratings(array $userids, array $ratings) {
+        $rated = [];
+        foreach ($ratings as $rating) {
+            if ($rating->rating > 0) {
+                $rated[$rating->userid] = true;
+            }
+        }
+        return array_values(array_filter($userids, function($userid) use ($rated) {
+            return isset($rated[$userid]);
+        }));
+    }
+
+    /**
      * Compute a department-aware complete allocation.
      *
      * @param array $choicerecords choice records; each needs ->id and ->maxsize
@@ -479,6 +501,12 @@ class mincost_lowerbound_distributor {
         foreach ($raters as $rater) {
             $userids[] = $rater->id;
             $deptof[$rater->id] = isset($rater->{$field}) ? trim((string) $rater->{$field}) : '';
+        }
+
+        // Optional course rule: only students who rated take part. Everyone else stays unallocated
+        // and can be placed afterwards with "Distribute unallocated" or by hand.
+        if ($ratingallocate->get_diversity_skip_unrated()) {
+            $userids = self::filter_users_with_ratings($userids, $ratings);
         }
 
         // Respect choice group visibility (usegroups) when deciding where a student may be placed.
