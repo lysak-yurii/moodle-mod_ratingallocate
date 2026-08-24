@@ -224,6 +224,53 @@ final class mincost_lowerbound_distributor_test extends \basic_testcase {
     }
 
     /**
+     * A top-up steers the leftovers towards the groups still missing their field value.
+     */
+    public function test_top_up_covers_the_missing_values(): void {
+        $choices = [$this->choice(1, 4), $this->choice(2, 4)];
+        // Group 1 already holds two A's, group 2 two B's; one A and one B are left to place.
+        $fixed = [1 => [11, 12], 2 => [21, 22]];
+        $deptof = [11 => 'A', 12 => 'A', 21 => 'B', 22 => 'B', 31 => 'A', 32 => 'B'];
+
+        $solver = new \mincost_lowerbound_distributor();
+        $result = $solver->compute_distribution($choices, [], [31, 32], $deptof, null, $fixed);
+        $dist = $result['distribution'];
+
+        $this->assertContains(31, $dist[2], 'the leftover A goes where no A is seated yet');
+        $this->assertContains(32, $dist[1], 'the leftover B goes where no B is seated yet');
+        $this->assertCount(2, $this->assigned_users($dist), 'only the leftovers are placed');
+    }
+
+    /**
+     * Seats already taken count towards the target sizes, so a full group receives nobody.
+     */
+    public function test_top_up_respects_seats_already_taken(): void {
+        $choices = [$this->choice(1, 3), $this->choice(2, 3)];
+        $fixed = [1 => [11, 12, 13], 2 => [21]];
+        $deptof = [11 => 'A', 12 => 'A', 13 => 'A', 21 => 'B', 31 => 'A', 32 => 'A'];
+
+        $solver = new \mincost_lowerbound_distributor();
+        $result = $solver->compute_distribution($choices, [], [31, 32], $deptof, null, $fixed);
+
+        $this->assertCount(0, $result['distribution'][1], 'the full group gets nobody');
+        $this->assertCount(2, $result['distribution'][2]);
+    }
+
+    /**
+     * Too few free places for the leftovers is reported as its own error.
+     */
+    public function test_top_up_without_room_is_reported(): void {
+        $choices = [$this->choice(1, 2), $this->choice(2, 2)];
+        $fixed = [1 => [11, 12], 2 => [21]];
+        $deptof = [11 => 'A', 12 => 'A', 21 => 'B', 31 => 'A', 32 => 'B'];
+
+        $solver = new \mincost_lowerbound_distributor();
+        $this->expectException(\moodle_exception::class);
+        $this->expectExceptionMessageMatches('/diversityinfeasible_topup/');
+        $solver->compute_distribution($choices, [], [31, 32], $deptof, null, $fixed);
+    }
+
+    /**
      * With the filter applied, the balanced size window follows the smaller population.
      */
     public function test_skipping_unrated_shrinks_the_groups(): void {

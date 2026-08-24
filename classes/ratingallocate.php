@@ -1057,6 +1057,23 @@ class ratingallocate {
         raise_memory_limit(MEMORY_EXTRA);
         core_php_time_limit::raise();
 
+        if ($this->get_diversity_field() !== '') {
+            // While groups are balanced by a profile field, filling the leftovers into whatever has
+            // room would undo the mix. Let the same solver place them instead, keeping everyone who
+            // is already allocated exactly where they are.
+            $toplace = $this->get_undistributed_users();
+            $distributor = new \mincost_lowerbound_distributor();
+            $distributor->top_up_users($this);
+
+            $completion = new completion_info($this->course);
+            if ($completion->is_enabled($this->coursemodule) == COMPLETION_TRACKING_AUTOMATIC) {
+                foreach ($toplace as $userid) {
+                    $completion->update_state($this->coursemodule, COMPLETION_UNKNOWN, $userid);
+                }
+            }
+            return;
+        }
+
         // This will retrieve a list of users we are trying to assign to choices, sorted from the least group membership count to
         // more group memberships. Users without group memberships will be at the end of the array.
         $possibleusers = $this->get_undistributed_users();
@@ -1310,7 +1327,8 @@ class ratingallocate {
             $output .= $renderer->render_ratingallocate_allocation_status(
                 $this->coursemodule->id,
                 $status,
-                $undistributeduserscount
+                $undistributeduserscount,
+                $this->get_diversity_field() !== ''
             );
             $output .= $renderer->render_ratingallocate_publish_allocation(
                 $this->ratingallocateid,

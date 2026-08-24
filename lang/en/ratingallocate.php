@@ -148,7 +148,9 @@ If a field value has fewer students than there are groups, it is mathematically 
 $string['diversityfield_off'] = 'Off (do not balance)';
 $string['diversityinfeasible'] =
         'Balancing groups by a profile field could not place every participant: with the current group restrictions on the choices, there is no way to fill every choice to its minimum size. Review the "Restrict visibility by groups" setting of the choices, then run the distribution again.';
-$string['diversityinfeasible_capacity'] = 'Balancing groups by a profile field needs room for every participant: the total maximum size of all active groups ({$a->capacity}) is smaller than the number of participants ({$a->users}). Increase the maximum sizes of the choices, or add another choice, then run the distribution again.';
+$string['diversityinfeasible_topup'] =
+        'There is not enough room left for the participants who are still unallocated: the choices have {$a->capacity} free places for {$a->users} participants. Increase the maximum sizes of the choices, or add another choice, then distribute the unallocated participants again.';
+$string['diversityinfeasible_capacity'] ='Balancing groups by a profile field needs room for every participant: the total maximum size of all active groups ({$a->capacity}) is smaller than the number of participants ({$a->users}). Increase the maximum sizes of the choices, or add another choice, then run the distribution again.';
 $string['diversitynocoverage'] = 'Balancing groups by a profile field: {$a} group/field-value combination(s) could not be covered.';
 $string['diversityreport_blocked'] = 'No student with field value "{$a->value}" was eligible (by group restrictions) for group "{$a->choice}".';
 $string['diversityreport_heading'] = 'Group diversity coverage';
