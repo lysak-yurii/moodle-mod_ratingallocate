@@ -1,7 +1,7 @@
 CHANGELOG
 =========
 
-Ratingallocate 5.0.0 +diversity.3 (fork)
+Ratingallocate 5.0.0 +diversity.4 (fork)
 ------------------
 
 - The downloads of the ratings/allocations table and of the allocations table now
@@ -14,6 +14,10 @@ Ratingallocate 5.0.0 +diversity.3 (fork)
   error notification, like the main algorithm does. If the task still meets the
   problem, it logs it and ends instead of failing and staying queued, which had
   kept the buttons disabled as "distribution running".
+
+Ratingallocate 5.0.0 +diversity.3 (fork)
+------------------
+
 - "Distribute unallocated" now goes through the same department-aware solver
   while "Balance groups by" is set, instead of the upstream fill-up logic which
   ignores the profile field. Everyone already allocated stays where they are;
