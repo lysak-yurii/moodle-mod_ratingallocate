@@ -1044,6 +1044,38 @@ class ratingallocate {
     }
 
     /**
+     * Checks whether the unallocated users fit into the choices while groups are balanced by a
+     * profile field, where the top-up places everyone or nobody.
+     *
+     * Applies the same size window as the solver, so it reports exactly the cases in which the
+     * top-up would stop with 'diversityinfeasible_topup'.
+     *
+     * @return string|null the message for the teacher, or null when there is room (or balancing is off)
+     */
+    public function get_top_up_capacity_problem(): ?string {
+        if ($this->get_diversity_field() === '') {
+            return null;
+        }
+        $choices = $this->get_rateable_choices();
+        $toplace = count($this->get_undistributed_users());
+        if ($toplace === 0 || empty($choices)) {
+            return null;
+        }
+
+        $seated = [];
+        foreach ($this->get_allocations() as $allocation) {
+            $seated[$allocation->choiceid] = ($seated[$allocation->choiceid] ?? 0) + 1;
+        }
+        [, $maxsize] = \mincost_lowerbound_distributor::size_window($choices, $toplace, $seated);
+        $room = array_sum($maxsize);
+        if ($room >= $toplace) {
+            return null;
+        }
+        return get_string('diversityinfeasible_topup', RATINGALLOCATE_MOD_NAME,
+            (object) ['capacity' => $room, 'users' => $toplace]);
+    }
+
+    /**
      * Try to distribute all currently unallocated users.
      *
      * @param string $distributionalgorithm the distributionalgorithm which should be used, you can choose between
@@ -1434,6 +1466,17 @@ class ratingallocate {
 
             case ACTION_DISTRIBUTE_UNALLOCATED_EQUALLY:
             case ACTION_DISTRIBUTE_UNALLOCATED_FILL:
+                $problem = $this->get_top_up_capacity_problem();
+                if ($problem !== null) {
+                    // Nothing the background task could do about it - say so now instead of queueing
+                    // a task that is bound to fail.
+                    redirect(
+                        new moodle_url('/mod/ratingallocate/view.php', ['id' => $this->coursemodule->id]),
+                        $problem,
+                        null,
+                        notification::NOTIFY_ERROR
+                    );
+                }
                 $this->queue_distribution_of_users_without_choice($action);
                 redirect(
                     new moodle_url('/mod/ratingallocate/view.php', ['id' => $this->coursemodule->id]),

@@ -78,7 +78,18 @@ class distribute_unallocated_task extends adhoc_task {
         $ratingallocate = new ratingallocate($ratingallocatedb, $course, $cm, $context);
 
         mtrace('Distributing unallocated users for ratingallocate with course module id ' . $cm->id);
-        $ratingallocate->distribute_users_without_choice($data->distributionalgorithm);
+        try {
+            $ratingallocate->distribute_users_without_choice($data->distributionalgorithm);
+        } catch (moodle_exception $e) {
+            if (!in_array($e->errorcode, ['diversityinfeasible_topup', 'diversityinfeasible'], true)) {
+                // Not something the teacher configured wrong - let it surface as usual.
+                throw $e;
+            }
+            // Retrying cannot help until the choices are changed, and a failed task would stay queued
+            // and keep the activity locked as "distribution running". Nobody has been allocated.
+            mtrace('Could not distribute the unallocated users, giving up: ' . $e->getMessage());
+            return;
+        }
         mtrace('Distribution of unallocated users for ratingallocate instance with course module id ' . $cm->id . ' done.');
     }
 }

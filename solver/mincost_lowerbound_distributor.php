@@ -146,6 +146,44 @@ class mincost_lowerbound_distributor {
     }
 
     /**
+     * How many more participants each choice has to take and may take in a run that places $n users.
+     *
+     * Balanced target sizes for the whole cohort: floor(T/K)..ceil(T/K), capped by each choice's
+     * configured maxsize. On a top-up, T counts the users already seated as well, so the targets
+     * describe the finished allocation rather than this run alone.
+     *
+     * @param array $choicerecords choice records; each needs ->id and ->maxsize
+     * @param int $n number of users the run has to place
+     * @param array $seated map choiceid => number of seats already taken (top-up runs only)
+     * @return array [ array(choiceid => min still to fill), array(choiceid => max still to fill) ]
+     */
+    public static function size_window(array $choicerecords, int $n, array $seated = []) {
+        $caps = [];
+        foreach ($choicerecords as $record) {
+            $caps[$record->id] = (int) $record->maxsize;
+        }
+        if (empty($caps)) {
+            return [[], []];
+        }
+        $taken = [];
+        foreach ($caps as $cid => $cap) {
+            $taken[$cid] = (int) ($seated[$cid] ?? 0);
+        }
+
+        $baseshare = intdiv($n + array_sum($taken), count($caps));
+        $minsize = [];
+        $maxsize = [];
+        foreach ($caps as $cid => $cap) {
+            $max = max(min($baseshare + 1, $cap), 0);
+            $min = min($baseshare, $max);
+            // What is left to fill in this run.
+            $maxsize[$cid] = max($max - $taken[$cid], 0);
+            $minsize[$cid] = min(max($min - $taken[$cid], 0), $maxsize[$cid]);
+        }
+        return [$minsize, $maxsize];
+    }
+
+    /**
      * Compute a department-aware complete allocation.
      *
      * @param array $choicerecords choice records; each needs ->id and ->maxsize
@@ -195,25 +233,8 @@ class mincost_lowerbound_distributor {
             }
         }
 
-        // Balanced target sizes for the whole cohort: floor(T/K)..ceil(T/K), capped by each choice's
-        // configured maxsize. On a top-up, T counts the users already seated as well, so the targets
-        // describe the finished allocation rather than this run alone.
-        $total = $n + array_sum($seated);
-        $baseshare = intdiv($total, $k);
-        $minsize = [];
-        $maxsize = [];
-        $totalmax = 0;
-        foreach ($choiceids as $cid) {
-            $cap = (int) $choices[$cid]->maxsize;
-            $max = min($baseshare + 1, $cap);
-            $max = max($max, 0);
-            $min = min($baseshare, $max);
-            // What is left to fill in this run.
-            $maxsize[$cid] = max($max - $seated[$cid], 0);
-            $minsize[$cid] = max($min - $seated[$cid], 0);
-            $minsize[$cid] = min($minsize[$cid], $maxsize[$cid]);
-            $totalmax += $maxsize[$cid];
-        }
+        [$minsize, $maxsize] = self::size_window($choices, $n, $seated);
+        $totalmax = array_sum($maxsize);
 
         // Feasibility guard: there must be room for everyone. A clear message beats a cryptic solver failure.
         if ($totalmax < $n) {

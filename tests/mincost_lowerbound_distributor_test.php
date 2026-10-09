@@ -271,6 +271,28 @@ final class mincost_lowerbound_distributor_test extends \basic_testcase {
     }
 
     /**
+     * The size window answers "is there room for the leftovers?" exactly as the top-up itself does,
+     * so the activity can refuse the action up front instead of queueing a task that fails.
+     */
+    public function test_size_window_matches_the_top_up_guard(): void {
+        $choices = [$this->choice(1, 2), $this->choice(2, 2)];
+
+        // Three of four seats taken, two users left: one place short, as in the test above.
+        [, $max] = \mincost_lowerbound_distributor::size_window($choices, 2, [1 => 2, 2 => 1]);
+        $this->assertSame([1 => 0, 2 => 1], $max);
+
+        // One user left fits.
+        [$min, $max] = \mincost_lowerbound_distributor::size_window($choices, 1, [1 => 2, 2 => 1]);
+        $this->assertSame(1, array_sum($max));
+        $this->assertSame([1 => 0, 2 => 1], $min);
+
+        // Without seated users it is the plain balanced window.
+        [$min, $max] = \mincost_lowerbound_distributor::size_window([$this->choice(1, 9), $this->choice(2, 9)], 5);
+        $this->assertSame([1 => 2, 2 => 2], $min);
+        $this->assertSame([1 => 3, 2 => 3], $max);
+    }
+
+    /**
      * With the filter applied, the balanced size window follows the smaller population.
      */
     public function test_skipping_unrated_shrinks_the_groups(): void {

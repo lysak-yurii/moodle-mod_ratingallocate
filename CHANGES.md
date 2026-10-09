@@ -4,6 +4,12 @@ CHANGELOG
 Ratingallocate 5.0.0 +diversity.3 (fork)
 ------------------
 
+- Fix "Distribute unallocated" locking the activity when balancing is switched on
+  after a standard run that left more participants over than there are places:
+  the room is now checked before the background task is queued and reported as an
+  error notification, like the main algorithm does. If the task still meets the
+  problem, it logs it and ends instead of failing and staying queued, which had
+  kept the buttons disabled as "distribution running".
 - "Distribute unallocated" now goes through the same department-aware solver
   while "Balance groups by" is set, instead of the upstream fill-up logic which
   ignores the profile field. Everyone already allocated stays where they are;
