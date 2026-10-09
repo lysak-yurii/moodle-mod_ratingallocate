@@ -4,6 +4,10 @@ CHANGELOG
 Ratingallocate 5.0.0 +diversity.3 (fork)
 ------------------
 
+- The downloads of the ratings/allocations table and of the allocations table now
+  always contain the profile field the activity balances by (Department or
+  Institution), even when the site-wide "download user fields" setting does not
+  include it. With balancing off the columns are as before.
 - Fix "Distribute unallocated" locking the activity when balancing is switched on
   after a standard run that left more participants over than there are places:
   the room is now checked before the background task is queued and reported as an

@@ -174,8 +174,7 @@ class ratings_and_allocations_table extends \table_sql {
 
         if ($this->shownames) {
             if ($this->is_downloading()) {
-                global $CFG;
-                $additionalfields = explode(',', $CFG->ratingallocate_download_userfields);
+                $additionalfields = $this->ratingallocate->get_download_userfields();
                 if (in_array('id', $additionalfields)) {
                     $columns[] = 'id';
                     $headers[] = 'ID';

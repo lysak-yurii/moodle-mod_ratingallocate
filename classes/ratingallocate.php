@@ -1644,6 +1644,24 @@ class ratingallocate {
     }
 
     /**
+     * The optional user fields to include in the downloads of the ratings and allocations tables.
+     *
+     * These are the fields the site administrator selected, plus the profile field this instance
+     * balances groups across: an export of a balanced allocation is of little use without it.
+     *
+     * @return string[]
+     */
+    public function get_download_userfields() {
+        global $CFG;
+        $fields = array_filter(explode(',', $CFG->ratingallocate_download_userfields ?? ''));
+        $diversityfield = $this->get_diversity_field();
+        if ($diversityfield !== '' && !in_array($diversityfield, $fields, true)) {
+            $fields[] = $diversityfield;
+        }
+        return $fields;
+    }
+
+    /**
      * Whether diversity-aware allocation should skip participants who submitted no rating at all.
      *
      * Off by default: placing everyone gives the students who did rate a better result, because
