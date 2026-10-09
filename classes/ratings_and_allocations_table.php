@@ -69,7 +69,7 @@ class ratings_and_allocations_table extends \table_sql {
     /**
      * @var array Array of all group names assigned to the choices, with choice id as key.
      */
-    private $groupnamesofchoices;
+    private $groupnamesofchoices = [];
 
     /**
      * @var bool if true the table should show a column with the groups in this ratingallocate instance which the user belongs to.
@@ -234,7 +234,7 @@ class ratings_and_allocations_table extends \table_sql {
             $columns[] = self::CHOICE_COL . $choiceid;
             $choice = $this->ratingallocate->get_choices()[$choiceid];
             if ($this->showgroups) {
-                $choicegroups = $this->groupnamesofchoices[$choiceid];
+                $choicegroups = $this->groupnamesofchoices[$choiceid] ?? [];
                 if (!$this->is_downloading() && !empty($choice->usegroups) && !empty($choicegroups)) {
                     $this->choicenames[$choiceid] .= ' <br/>' . \html_writer::span(
                         '(' . implode(';', $choicegroups) . ')',
@@ -335,11 +335,12 @@ class ratings_and_allocations_table extends \table_sql {
             $choices = $this->ratingallocate->get_choices_by_id($this->filter_choiceids($choiceids));
             $row = [];
             foreach ($choices as $choice) {
-                $choicegroups = $this->groupnamesofchoices[$choice->id];
+                // Empty unless a choice is restricted to groups: the names are only collected then.
+                $choicegroups = $this->groupnamesofchoices[$choice->id] ?? [];
                 if (empty($choice->usegroups) || empty($choicegroups)) {
                     continue;
                 }
-                $groupnames = implode(';', $this->groupnamesofchoices[$choice->id]);
+                $groupnames = implode(';', $choicegroups);
                 $row[self::CHOICE_COL . $choice->id] = $groupnames;
                 $row[self::CHOICE_COL . $choice->id . self::EXPORT_CHOICE_TEXT_SUFFIX] = $groupnames;
                 $row[self::CHOICE_COL . $choice->id . self::EXPORT_CHOICE_ALLOC_SUFFIX] = $groupnames;
