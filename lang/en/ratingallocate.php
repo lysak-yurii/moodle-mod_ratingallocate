@@ -134,13 +134,26 @@ $string['distribute_unallocated_fill_confirm'] = 'All currently unallocated user
  Each choice will be filled up to its maximum before assigning users to the next choice.';
 $string['diversitycapacitywarning'] =
         'Balancing by a profile field places every participant, so the choices must have room for everyone. At the moment the maximum sizes of all active choices add up to {$a->capacity} places for {$a->users} participants — {$a->missing} too few. Running the algorithm will stop with an error until you raise the maximum size of some choices (or add another choice).';
+$string['diversityequalsize'] = 'Group sizes';
+$string['diversityequalsize_help'] = 'Ticked (the default), every group is filled to the same size: the participants taking part in the run are divided evenly over all choices. A choice that few students rated is then filled with students who did not rate it.
+
+Untick this box if everyone who rated must get one of the choices they rated. No choice has a minimum size any more, and each one takes at most its own maximum size. Students who rated are only ever placed in a choice they rated; the mix by profile field is still aimed for, but only within those choices.
+
+Be aware of the consequences:
+
+* Groups become unequal. Popular choices fill up to their maximum, unpopular ones stay small or empty.
+* Groups are less mixed, because students can no longer be moved to where their study programme is missing.
+* If all the choices a student rated are full, that student is left unallocated instead of being placed elsewhere. Place them afterwards with "Distribute unallocated" (which may use any choice with room) or by hand, or raise the maximum sizes and run the distribution again.
+
+Students without any rating are not affected: unless they are left out with the option above, they are placed wherever there is room.';
+$string['diversityequalsize_label'] = 'Fill all groups to the same size';
 $string['diversityfield'] = 'Balance groups by';
 $string['diversityfield_default'] = 'Default for "Balance groups by"';
 $string['diversityfield_help'] = 'When set, the allocation aims to give every group at least one member of each value of the chosen user profile field (for example, each study programme stored in the Department field), so groups are as mixed as possible.
 
-Turning this on changes how the allocation works: instead of leaving unrated groups empty and some students unallocated, it performs a **complete, balanced allocation** — every participant is placed and every group is filled to a balanced size (respecting each choice\'s maximum). Participants who submitted no rating can be excluded with the "Students without ratings" option below.
+Turning this on changes how the allocation works: instead of leaving unrated groups empty and some students unallocated, it performs a **complete, balanced allocation** — every participant is placed and every group is filled to a balanced size (respecting each choice\'s maximum). Participants who submitted no rating can be excluded with the "Students without ratings" option below, and the equal sizes can be given up with the "Group sizes" option so that nobody who rated is placed in a group they did not rate.
 
-The two goals are ranked rather than weighted: the allocation first covers as many group/field-value combinations as it can, and only among those solutions does it make the ratings as good as possible. A student may therefore be placed in a lower-ranked choice — or in a group they did not rate — when that is what puts their study programme into a group that would otherwise not have one.
+The two goals are ranked rather than weighted: the allocation first covers as many group/field-value combinations as it can, and only among those solutions does it make the ratings as good as possible. A student may therefore be placed in a lower-ranked choice — or in a group they did not rate — when that is what puts their study programme into a group that would otherwise not have one. The "Priority" option below reverses this order.
 
 Since everybody has to fit somewhere, the maximum sizes of all active choices together must be at least the number of participants; otherwise the distribution stops with an error instead of allocating.
 
@@ -151,7 +164,23 @@ $string['diversityinfeasible'] =
 $string['diversityinfeasible_topup'] =
         'There is not enough room left for the participants who are still unallocated: the choices have {$a->capacity} free places for {$a->users} participants. Increase the maximum sizes of the choices, or add another choice, then distribute the unallocated participants again.';
 $string['diversityinfeasible_capacity'] ='Balancing groups by a profile field needs room for every participant: the total maximum size of all active groups ({$a->capacity}) is smaller than the number of participants ({$a->users}). Increase the maximum sizes of the choices, or add another choice, then run the distribution again.';
+$string['diversityminsize'] = 'Minimum group size';
+$string['diversityminsize_help'] = 'Only available while "Fill all groups to the same size" is unticked. A choice that would receive fewer participants than this number is cancelled: it gets nobody, and the allocation is calculated again without it, within the same run. The participants it would have had are placed in another choice they rated; whoever has no place left in any of them stays unallocated.
+
+Nobody is ever moved into a choice just to reach the minimum. Enter 0 for no minimum.
+
+A high minimum cancels many choices and can leave participants unallocated. "Distribute unallocated" does not check the minimum and may use the cancelled choices again.';
+$string['diversityminsizenotice'] = 'These choices have fewer than {$a} participants (the minimum group size), so the allocation left them empty:';
 $string['diversitynocoverage'] = 'Balancing groups by a profile field: {$a} group/field-value combination(s) could not be covered.';
+$string['diversitypriority'] = 'Priority';
+$string['diversitypriority_help'] = 'Decides which goal wins when the mix of the groups and the ratings of the students cannot both be met.
+
+* **Mix of the groups first**: the allocation covers as many group/field-value combinations as it can, and only among those solutions makes the ratings as good as possible. Students more often receive a lower-ranked choice.
+* **Ratings first**: the allocation gives the students the best possible choices, and only among those solutions mixes the groups as well as it can. Groups are less mixed.
+
+The other rules are not affected: group sizes and who takes part follow the options above.';
+$string['diversitypriority_mix'] = 'Mix of the groups first, then ratings';
+$string['diversitypriority_ratings'] = 'Ratings first, then mix of the groups';
 $string['diversityreport_blocked'] = 'No student with field value "{$a->value}" was eligible (by group restrictions) for group "{$a->choice}".';
 $string['diversityreport_heading'] = 'Group diversity coverage';
 $string['diversityreport_impossible'] = 'Field value "{$a->value}" has only {$a->count} student(s) but there are {$a->groups} groups, so at most {$a->count} group(s) can include it.';

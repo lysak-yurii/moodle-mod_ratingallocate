@@ -173,6 +173,36 @@ class mod_ratingallocate_mod_form extends moodleform_mod {
         $mform->setDefault($elementname, 0);
         $mform->hideIf($elementname, 'diversityfield', 'eq', '');
 
+        // Only meaningful together with "Balance groups by": untick to keep raters within their own choices.
+        $elementname = 'diversityequalsize';
+        $mform->addElement('advcheckbox', $elementname, get_string($elementname, self::MOD_NAME),
+            get_string($elementname . '_label', self::MOD_NAME), [], [0, 1]);
+        $mform->addHelpButton($elementname, $elementname, self::MOD_NAME);
+        $mform->setType($elementname, PARAM_INT);
+        $mform->setDefault($elementname, 1);
+        $mform->hideIf($elementname, 'diversityfield', 'eq', '');
+
+        // Only meaningful without equal sizes, which fill every choice anyway.
+        $elementname = 'diversityminsize';
+        $mform->addElement('text', $elementname, get_string($elementname, self::MOD_NAME), ['size' => '4']);
+        $mform->addHelpButton($elementname, $elementname, self::MOD_NAME);
+        $mform->setType($elementname, PARAM_INT);
+        $mform->setDefault($elementname, 0);
+        $mform->addRule($elementname, null, 'numeric', null, 'client');
+        $mform->hideIf($elementname, 'diversityfield', 'eq', '');
+        $mform->hideIf($elementname, 'diversityequalsize', 'checked');
+
+        // Only meaningful together with "Balance groups by": which of the two goals wins a conflict.
+        $elementname = 'diversitypriority';
+        $mform->addElement('select', $elementname, get_string($elementname, self::MOD_NAME), [
+            0 => get_string($elementname . '_mix', self::MOD_NAME),
+            1 => get_string($elementname . '_ratings', self::MOD_NAME),
+        ]);
+        $mform->addHelpButton($elementname, $elementname, self::MOD_NAME);
+        $mform->setType($elementname, PARAM_INT);
+        $mform->setDefault($elementname, 0);
+        $mform->hideIf($elementname, 'diversityfield', 'eq', '');
+
         $headerid = 'strategy_fieldset';
         $mform->addElement('header', $headerid, get_string('strategyspecificoptions', RATINGALLOCATE_MOD_NAME));
         $mform->setExpanded($headerid);

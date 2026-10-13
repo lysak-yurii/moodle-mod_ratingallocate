@@ -314,4 +314,138 @@ final class mincost_lowerbound_distributor_test extends \basic_testcase {
         $this->assertCount(2, $dist[1]);
         $this->assertCount(2, $dist[2]);
     }
+
+    /**
+     * Without equal sizes, students who rated stay within their own choices and other groups stay empty.
+     */
+    public function test_unequal_sizes_keep_raters_in_rated_choices(): void {
+        $choices = [$this->choice(1, 4), $this->choice(2, 4)];
+        $userids = [1, 2, 3, 4];
+        $deptof = array_fill_keys($userids, '');
+        $ratings = [];
+        foreach ($userids as $userid) {
+            $ratings[] = $this->rating($userid, 1, 2);
+        }
+        $solver = new \mincost_lowerbound_distributor();
+
+        $equal = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null);
+        $this->assertCount(2, $equal['distribution'][2], 'equal sizes push two students into the unrated group');
+
+        $unequal = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null, null, false);
+        $this->assertCount(4, $unequal['distribution'][1]);
+        $this->assertCount(0, $unequal['distribution'][2]);
+        $this->assertSame([], $unequal['unplaced']);
+    }
+
+    /**
+     * Without equal sizes, a student whose rated choices are all full is left out, not moved elsewhere.
+     */
+    public function test_unequal_sizes_leave_out_who_does_not_fit(): void {
+        $choices = [$this->choice(1, 2), $this->choice(2, 2)];
+        $userids = [1, 2, 3];
+        $deptof = array_fill_keys($userids, '');
+        $ratings = [$this->rating(1, 1, 2), $this->rating(2, 1, 2), $this->rating(3, 1, 2)];
+
+        $solver = new \mincost_lowerbound_distributor();
+        $result = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null, null, false);
+
+        $this->assertCount(2, $result['distribution'][1]);
+        $this->assertCount(0, $result['distribution'][2], 'nobody is placed in a group they did not rate');
+        $this->assertCount(1, $result['unplaced']);
+    }
+
+    /**
+     * Without equal sizes, a student without any rating is still placed wherever there is room.
+     */
+    public function test_unequal_sizes_place_non_raters_anywhere(): void {
+        $choices = [$this->choice(1, 2), $this->choice(2, 2)];
+        $userids = [1, 2, 3];
+        $deptof = array_fill_keys($userids, '');
+        $ratings = [$this->rating(1, 1, 2), $this->rating(2, 1, 2)];
+
+        $solver = new \mincost_lowerbound_distributor();
+        $result = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null, null, false);
+
+        $this->assertEqualsCanonicalizing([1, 2], $result['distribution'][1]);
+        $this->assertSame([3], $result['distribution'][2]);
+        $this->assertSame([], $result['unplaced']);
+    }
+
+    /**
+     * A top-up without equal sizes seats the leftovers in any group with room, whatever they rated.
+     */
+    public function test_unequal_sizes_top_up_uses_any_room(): void {
+        $choices = [$this->choice(1, 2), $this->choice(2, 5)];
+        $fixed = [1 => [1, 2]];
+        $deptof = [1 => '', 2 => '', 3 => ''];
+        $ratings = [$this->rating(1, 1, 2), $this->rating(2, 1, 2), $this->rating(3, 1, 2)];
+
+        $solver = new \mincost_lowerbound_distributor();
+        $result = $solver->compute_distribution($choices, $ratings, [3], $deptof, null, $fixed, false);
+
+        $this->assertSame([3], $result['distribution'][2]);
+        $this->assertSame([], $result['unplaced']);
+
+        // No target sizes: nothing has to be filled, and each choice may take up to its own maximum.
+        [$min, $max] = \mincost_lowerbound_distributor::size_window($choices, 1, [1 => 2], false);
+        $this->assertSame([1 => 0, 2 => 0], $min);
+        $this->assertSame([1 => 0, 2 => 5], $max);
+    }
+
+    /**
+     * The priority decides whether the mix or the ratings win when they pull in different directions.
+     */
+    public function test_ratings_first_reverses_the_priority(): void {
+        $choices = [$this->choice(1, 2), $this->choice(2, 2)];
+        $userids = [1, 2, 3, 4];
+        $deptof = [1 => 'A', 2 => 'A', 3 => 'B', 4 => 'B'];
+        // Both A's prefer choice 1, both B's prefer choice 2.
+        $ratings = [
+            $this->rating(1, 1, 2), $this->rating(1, 2, 1), $this->rating(2, 1, 2), $this->rating(2, 2, 1),
+            $this->rating(3, 2, 2), $this->rating(3, 1, 1), $this->rating(4, 2, 2), $this->rating(4, 1, 1),
+        ];
+        $solver = new \mincost_lowerbound_distributor();
+
+        $mixfirst = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null);
+        foreach ($mixfirst['distribution'] as $members) {
+            $this->assertEqualsCanonicalizing(['A', 'B'], array_map(fn($userid) => $deptof[$userid], $members));
+        }
+
+        $ratingsfirst = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null, null, true, true);
+        $this->assertEqualsCanonicalizing([1, 2], $ratingsfirst['distribution'][1]);
+        $this->assertEqualsCanonicalizing([3, 4], $ratingsfirst['distribution'][2]);
+    }
+
+    /**
+     * A choice below the minimum is cancelled; its members move to another choice they rated or stay out.
+     */
+    public function test_minimum_cancels_small_choices(): void {
+        $choices = [$this->choice(1, 5), $this->choice(2, 5), $this->choice(3, 5)];
+        $userids = [1, 2, 3, 4, 5];
+        $deptof = array_fill_keys($userids, '');
+        $ratings = [
+            $this->rating(1, 1, 2), $this->rating(2, 1, 2), $this->rating(3, 1, 2),
+            // Prefers choice 2 but would be alone there; choice 1 is the fallback.
+            $this->rating(4, 2, 2), $this->rating(4, 1, 1),
+            // Rated nothing but choice 3, and would be alone there.
+            $this->rating(5, 3, 2),
+        ];
+        $solver = new \mincost_lowerbound_distributor();
+
+        $without = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null, null, false, true);
+        $this->assertSame([4], $without['distribution'][2]);
+        $this->assertSame([], $without['cancelled']);
+
+        $with = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null, null, false, true, 2);
+        $this->assertEqualsCanonicalizing([1, 2, 3, 4], $with['distribution'][1]);
+        $this->assertCount(0, $with['distribution'][2]);
+        $this->assertCount(0, $with['distribution'][3], 'nobody is left in a cancelled choice');
+        $this->assertSame([5], $with['unplaced'], 'a cancelled choice does not turn its only rater into a non-rater');
+        $this->assertEqualsCanonicalizing([2, 3], $with['cancelled']);
+
+        // With equal sizes the minimum is ignored: every choice is filled anyway.
+        $equal = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null, null, true, true, 3);
+        $this->assertSame([], $equal['cancelled']);
+        $this->assertCount(5, $this->assigned_users($equal['distribution']));
+    }
 }

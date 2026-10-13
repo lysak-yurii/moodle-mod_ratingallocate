@@ -105,4 +105,16 @@ class ratingallocate {
      * Whether diversity-aware allocation leaves participants without any rating unallocated.
      */
     const DIVERSITYSKIPUNRATED = 'diversityskipunrated';
+    /**
+     * Whether diversity-aware allocation fills every choice to the same size.
+     */
+    const DIVERSITYEQUALSIZE = 'diversityequalsize';
+    /**
+     * What diversity-aware allocation optimises first: 0 = the mix of field values, 1 = the ratings.
+     */
+    const DIVERSITYPRIORITY = 'diversitypriority';
+    /**
+     * Diversity-aware allocation without equal sizes: minimum members of a choice, 0 = none.
+     */
+    const DIVERSITYMINSIZE = 'diversityminsize';
 }

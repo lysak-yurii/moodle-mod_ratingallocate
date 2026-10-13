@@ -35,6 +35,18 @@
  * preferences among those solutions. All edge costs are non-negative, so the flow network has no
  * negative cycles and can be solved with successive shortest paths using Johnson potentials + Dijkstra.
  *
+ * With equal group sizes switched off the minimum per group is dropped and a participant who rated
+ * is only ever placed in a choice they rated; whoever does not fit into any of them stays unallocated
+ * (a costly user -> Sink bypass edge), so nobody is moved somewhere they did not ask for.
+ *
+ * The order of the two goals can be reversed: with ratings first, the preference costs are scaled up
+ * until one step of preference outweighs all coverage together, and BONUS shrinks to 1, so coverage
+ * only decides between allocations that are equally good for the ratings.
+ *
+ * A minimum number of members (without equal sizes only) is not part of the flow: a choice that ends
+ * up below it is cancelled and the flow is solved again without it, until none is left. Its members
+ * move to another choice they rated, or stay unallocated.
+ *
  * @package    mod_ratingallocate
  * @copyright  2026 Yurii Lysak
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -152,12 +164,16 @@ class mincost_lowerbound_distributor {
      * configured maxsize. On a top-up, T counts the users already seated as well, so the targets
      * describe the finished allocation rather than this run alone.
      *
+     * Without equal sizes there is no target at all: nothing has to be filled, and each choice may
+     * take whatever its own maxsize still allows.
+     *
      * @param array $choicerecords choice records; each needs ->id and ->maxsize
      * @param int $n number of users the run has to place
      * @param array $seated map choiceid => number of seats already taken (top-up runs only)
+     * @param bool $equalsize whether every choice is filled to the same size
      * @return array [ array(choiceid => min still to fill), array(choiceid => max still to fill) ]
      */
-    public static function size_window(array $choicerecords, int $n, array $seated = []) {
+    public static function size_window(array $choicerecords, int $n, array $seated = [], bool $equalsize = true) {
         $caps = [];
         foreach ($choicerecords as $record) {
             $caps[$record->id] = (int) $record->maxsize;
@@ -170,9 +186,17 @@ class mincost_lowerbound_distributor {
             $taken[$cid] = (int) ($seated[$cid] ?? 0);
         }
 
-        $baseshare = intdiv($n + array_sum($taken), count($caps));
         $minsize = [];
         $maxsize = [];
+        if (!$equalsize) {
+            foreach ($caps as $cid => $cap) {
+                $minsize[$cid] = 0;
+                $maxsize[$cid] = max($cap - $taken[$cid], 0);
+            }
+            return [$minsize, $maxsize];
+        }
+
+        $baseshare = intdiv($n + array_sum($taken), count($caps));
         foreach ($caps as $cid => $cap) {
             $max = max(min($baseshare + 1, $cap), 0);
             $min = min($baseshare, $max);
@@ -196,11 +220,63 @@ class mincost_lowerbound_distributor {
      *        top-up run. Their seats are subtracted from the target sizes, and a (choice, field value)
      *        pair they already cover is not rewarded again. $deptof must cover these users as well.
      *        Only the users in $userids are placed; the ones in $fixed are never moved.
-     * @return array [ 'distribution' => array(choiceid => [userid, ...]), 'report' => array of messages ]
+     * @param bool $equalsize whether every choice is filled to the same size. When false, no choice
+     *        has a minimum, and outside a top-up a user who rated is placed in a rated choice or not
+     *        at all. A top-up is the teacher asking for the leftovers to be seated, so there they may
+     *        go wherever there is room.
+     * @param bool $ratingsfirst whether the ratings rank above the coverage of field values instead of
+     *        below it
+     * @param int $minmembers a choice that would get fewer members than this (but not none) is
+     *        cancelled and gets nobody. Only applies without equal sizes and outside a top-up, where
+     *        nobody is used to fill a group; 0 or 1 means no minimum.
+     * @return array [ 'distribution' => array(choiceid => [userid, ...]), 'report' => array of messages,
+     *        'unplaced' => list of userids that could not be seated,
+     *        'cancelled' => list of choiceids emptied for staying below $minmembers ]
      * @throws \moodle_exception when the configured capacities cannot accommodate every student
      */
     public function compute_distribution(array $choicerecords, array $ratings, array $userids,
-            array $deptof, ?array $eligibility = null, ?array $fixed = null) {
+            array $deptof, ?array $eligibility = null, ?array $fixed = null, bool $equalsize = true,
+            bool $ratingsfirst = false, int $minmembers = 0) {
+
+        $checkminimum = $minmembers > 1 && !$equalsize && $fixed === null;
+        $cancelled = [];
+        // Every round cancels at least one more choice, so this ends after at most one round per choice.
+        do {
+            $result = $this->solve($choicerecords, $ratings, $userids, $deptof, $eligibility, $fixed,
+                $equalsize, $ratingsfirst, $cancelled);
+            $toosmall = [];
+            if ($checkminimum) {
+                foreach ($result['distribution'] as $cid => $members) {
+                    if (!empty($members) && count($members) < $minmembers) {
+                        $toosmall[] = $cid;
+                    }
+                }
+            }
+            $cancelled = array_merge($cancelled, $toosmall);
+        } while (!empty($toosmall));
+
+        $result['cancelled'] = $cancelled;
+        return $result;
+    }
+
+    /**
+     * Solve one min-cost flow for {@see compute_distribution()}, which documents the shared parameters.
+     *
+     * @param array $choicerecords
+     * @param array $ratings
+     * @param int[] $userids
+     * @param array $deptof
+     * @param array|null $eligibility
+     * @param array|null $fixed
+     * @param bool $equalsize
+     * @param bool $ratingsfirst
+     * @param int[] $cancelled ids of choices that take nobody in this round. They stay in the graph,
+     *        so that somebody who rated only those still counts as having rated.
+     * @return array [ 'distribution' => ..., 'report' => ..., 'unplaced' => ... ]
+     * @throws \moodle_exception when the configured capacities cannot accommodate every student
+     */
+    private function solve(array $choicerecords, array $ratings, array $userids, array $deptof,
+            ?array $eligibility, ?array $fixed, bool $equalsize, bool $ratingsfirst, array $cancelled) {
 
         $choices = [];
         foreach ($choicerecords as $record) {
@@ -211,7 +287,7 @@ class mincost_lowerbound_distributor {
         $k = count($choiceids);
 
         if ($n === 0 || $k === 0) {
-            return ['distribution' => array_fill_keys($choiceids, []), 'report' => []];
+            return ['distribution' => array_fill_keys($choiceids, []), 'report' => [], 'unplaced' => []];
         }
 
         // Seats that are already taken, per choice, when topping up an existing allocation.
@@ -233,7 +309,7 @@ class mincost_lowerbound_distributor {
             }
         }
 
-        [$minsize, $maxsize] = self::size_window($choices, $n, $seated);
+        [$minsize, $maxsize] = self::size_window($choices, $n, $seated, $equalsize);
         $totalmax = array_sum($maxsize);
 
         // Feasibility guard: there must be room for everyone. A clear message beats a cryptic solver failure.
@@ -241,20 +317,41 @@ class mincost_lowerbound_distributor {
             throw new \moodle_exception($fixed === null ? 'diversityinfeasible_capacity' : 'diversityinfeasible_topup',
                 'ratingallocate', '', (object) ['capacity' => $totalmax, 'users' => $n]);
         }
+        // Checked against the configured sizes above: whoever a cancelled choice leaves without a
+        // seat stays unallocated instead of stopping the run.
+        foreach ($cancelled as $cid) {
+            $maxsize[$cid] = 0;
+        }
 
         // Ratings, keyed by "userid|choiceid" for O(1) lookup, and the maximum rating value.
         $ratingof = [];
+        $hasrated = [];
         $maxrating = 1;
         foreach ($ratings as $rating) {
             if ($rating->rating > 0) {
                 $ratingof[$rating->userid . '|' . $rating->choiceid] = $rating->rating;
                 $maxrating = max($maxrating, (int) $rating->rating);
+                if (isset($choices[$rating->choiceid])) {
+                    $hasrated[$rating->userid] = true;
+                }
             }
         }
+
+        // Without equal sizes nobody is needed to fill a group, so a rater is kept to their own choices.
+        $ratedonly = !$equalsize && $fixed === null;
 
         // BONUS must dominate every preference cost so that covering one more (group, dept) pair always
         // outweighs any preference loss (total preference cost is bounded by N * maxrating).
         $bonus = $n * $maxrating + 1;
+        $ratingscale = 1;
+        if ($ratingsfirst) {
+            // The other way round: at most N units ever pay BONUS, so N + 1 per step of preference
+            // outweighs them all.
+            $bonus = 1;
+            $ratingscale = $n + 1;
+        }
+        // Leaving somebody out must in turn cost more than everything a full allocation could add up to.
+        $unplacedcost = $n * ($bonus + $maxrating * $ratingscale) + 1;
 
         // Build the graph. Node layout: source, users, choices, sink, then (choice, dept) nodes lazily.
         $this->reset_graph();
@@ -303,6 +400,13 @@ class mincost_lowerbound_distributor {
             $this->add_edge_lb($source, $usernode[$uid], 1, 1, 0);
         }
 
+        // user -> Sink: the way out for a user none of whose own choices has a seat left.
+        if ($ratedonly) {
+            foreach ($userids as $uid) {
+                $this->add_edge($usernode[$uid], $sink, 1, $unplacedcost);
+            }
+        }
+
         // user -> (choice, dept) [or -> choice for users with no field value].
         foreach ($userids as $uid) {
             $dept = isset($deptof[$uid]) ? trim((string) $deptof[$uid]) : '';
@@ -312,8 +416,11 @@ class mincost_lowerbound_distributor {
                     continue;
                 }
                 $rating = $ratingof[$uid . '|' . $cid] ?? null;
+                if ($rating === null && $ratedonly && isset($hasrated[$uid])) {
+                    continue;
+                }
                 // Higher rating -> lower cost; unrated choices cost more than any rated choice.
-                $cost = $rating === null ? $maxrating : ($maxrating - $rating);
+                $cost = ($rating === null ? $maxrating : ($maxrating - $rating)) * $ratingscale;
                 if ($dept === '') {
                     $this->add_edge($usernode[$uid], $choicenode[$cid], 1, $cost);
                 } else {
@@ -369,19 +476,25 @@ class mincost_lowerbound_distributor {
 
         // Extract the allocation: the single forward edge out of each user carrying flow gives the choice.
         $distribution = array_fill_keys($choiceids, []);
+        $unplaced = [];
         foreach ($userids as $uid) {
+            $placed = false;
             foreach ($this->adj[$usernode[$uid]] as $eid) {
                 if ($this->ecap[$eid] > 0 && $this->eflow[$eid] > 0 && isset($nodechoice[$this->eto[$eid]])) {
                     $distribution[$nodechoice[$this->eto[$eid]]][] = $uid;
+                    $placed = true;
                     break;
                 }
+            }
+            if (!$placed) {
+                $unplaced[] = $uid;
             }
         }
 
         $report = $this->build_coverage_report($choiceids, $cdnode, $choicenode, $deptusers, $eligibility,
             $fixedcovered);
 
-        return ['distribution' => $distribution, 'report' => $report];
+        return ['distribution' => $distribution, 'report' => $report, 'unplaced' => $unplaced];
     }
 
     /**
@@ -588,7 +701,8 @@ class mincost_lowerbound_distributor {
         $eligibility = $ratingallocate->get_choice_eligibility($choicerecords, $userids);
 
         $result = $this->compute_distribution($choicerecords, $ratings, $userids, $deptof,
-            $eligibility['restricted'] ? $eligibility['map'] : null, $fixed);
+            $eligibility['restricted'] ? $eligibility['map'] : null, $fixed,
+            $ratingallocate->get_diversity_equal_size(), $ratingallocate->get_diversity_ratings_first());
 
         $placed = 0;
         $transaction = $ratingallocate->db->start_delegated_transaction();
@@ -634,7 +748,9 @@ class mincost_lowerbound_distributor {
         $eligibility = $ratingallocate->get_choice_eligibility($choicerecords, $userids);
 
         $result = $this->compute_distribution($choicerecords, $ratings, $userids, $deptof,
-            $eligibility['restricted'] ? $eligibility['map'] : null);
+            $eligibility['restricted'] ? $eligibility['map'] : null, null,
+            $ratingallocate->get_diversity_equal_size(), $ratingallocate->get_diversity_ratings_first(),
+            $ratingallocate->get_diversity_min_size());
 
         $transaction = $ratingallocate->db->start_delegated_transaction();
         $ratingallocate->clear_all_allocations();

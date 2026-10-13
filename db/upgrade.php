@@ -263,5 +263,44 @@ function xmldb_ratingallocate_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026082400, 'ratingallocate');
     }
 
+    if ($oldversion < 2026101300) {
+        // Define field diversityequalsize to be added to ratingallocate.
+        $table = new xmldb_table('ratingallocate');
+        $field = new xmldb_field('diversityequalsize', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, false, '1',
+            'diversityskipunrated');
+
+        // Conditionally launch add field diversityequalsize.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Define field diversitypriority to be added to ratingallocate.
+        $field = new xmldb_field('diversitypriority', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, false, '0',
+            'diversityequalsize');
+
+        // Conditionally launch add field diversitypriority.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Ratingallocate savepoint reached.
+        upgrade_mod_savepoint(true, 2026101300, 'ratingallocate');
+    }
+
+    if ($oldversion < 2026101301) {
+        // Define field diversityminsize to be added to ratingallocate.
+        $table = new xmldb_table('ratingallocate');
+        $field = new xmldb_field('diversityminsize', XMLDB_TYPE_INTEGER, '4', null, XMLDB_NOTNULL, false, '0',
+            'diversitypriority');
+
+        // Conditionally launch add field diversityminsize.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Ratingallocate savepoint reached.
+        upgrade_mod_savepoint(true, 2026101301, 'ratingallocate');
+    }
+
     return true;
 }

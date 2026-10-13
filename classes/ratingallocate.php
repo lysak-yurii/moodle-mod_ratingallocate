@@ -1066,7 +1066,8 @@ class ratingallocate {
         foreach ($this->get_allocations() as $allocation) {
             $seated[$allocation->choiceid] = ($seated[$allocation->choiceid] ?? 0) + 1;
         }
-        [, $maxsize] = \mincost_lowerbound_distributor::size_window($choices, $toplace, $seated);
+        [, $maxsize] = \mincost_lowerbound_distributor::size_window($choices, $toplace, $seated,
+            $this->get_diversity_equal_size());
         $room = array_sum($maxsize);
         if ($room >= $toplace) {
             return null;
@@ -1167,6 +1168,7 @@ class ratingallocate {
             );
 
             $output .= $this->render_diversity_coverage_notice();
+            $output .= $this->render_diversity_min_size_notice();
             $output .= $renderer->ratings_table_for_ratingallocate(
                 $this->get_rateable_choices(),
                 $this->get_ratings_for_rateable_choices(),
@@ -1212,6 +1214,7 @@ class ratingallocate {
             );
 
             $output .= $this->render_diversity_coverage_notice();
+            $output .= $this->render_diversity_min_size_notice();
             $output .= $renderer->allocation_table_for_ratingallocate($this);
 
             // Logging.
@@ -1678,6 +1681,50 @@ class ratingallocate {
     }
 
     /**
+     * Whether diversity-aware allocation fills every choice to the same size.
+     *
+     * On by default. Switched off, no choice has a minimum any more, which is what allows the
+     * allocation to keep everyone who rated within the choices they rated. Only meaningful while
+     * diversity-aware allocation is switched on.
+     *
+     * @return bool
+     */
+    public function get_diversity_equal_size() {
+        // Read, then cast - see get_diversity_skip_unrated() for why isset()/empty() cannot be used.
+        $value = $this->ratingallocate->{this_db\ratingallocate::DIVERSITYEQUALSIZE} ?? 1;
+        return (bool) (int) $value;
+    }
+
+    /**
+     * Whether diversity-aware allocation ranks the ratings above the mix of field values.
+     *
+     * Off by default: the mix comes first and the ratings decide among the best-mixed allocations.
+     * Only meaningful while diversity-aware allocation is switched on.
+     *
+     * @return bool
+     */
+    public function get_diversity_ratings_first() {
+        // Read, then cast - see get_diversity_skip_unrated() for why isset()/empty() cannot be used.
+        $value = $this->ratingallocate->{this_db\ratingallocate::DIVERSITYPRIORITY} ?? 0;
+        return (bool) (int) $value;
+    }
+
+    /**
+     * The minimum number of members a choice needs in diversity-aware allocation without equal
+     * sizes; a choice that would get fewer is cancelled and gets nobody.
+     *
+     * @return int 0 when there is no minimum (also while equal sizes are on, which fill every choice)
+     */
+    public function get_diversity_min_size() {
+        if ($this->get_diversity_field() === '' || $this->get_diversity_equal_size()) {
+            return 0;
+        }
+        // Read, then cast - see get_diversity_skip_unrated() for why isset()/empty() cannot be used.
+        $value = $this->ratingallocate->{this_db\ratingallocate::DIVERSITYMINSIZE} ?? 0;
+        return max((int) $value, 0);
+    }
+
+    /**
      * Ids of all participants who rated at least one rateable choice.
      *
      * @return int[]
@@ -1810,6 +1857,42 @@ class ratingallocate {
         $message = html_writer::tag('strong', get_string('diversityreport_heading', 'ratingallocate')) .
             html_writer::alist($items);
         return $OUTPUT->notification($message, \core\output\notification::NOTIFY_WARNING);
+    }
+
+    /**
+     * Name the choices that are below the minimum number of members, so the teacher sees which ones
+     * the allocation cancelled (or which fell below it through later manual changes).
+     *
+     * @return string HTML, or '' when no minimum applies, nothing is allocated yet or no choice is below it
+     */
+    public function render_diversity_min_size_notice() {
+        global $OUTPUT;
+
+        $minsize = $this->get_diversity_min_size();
+        if ($minsize < 2) {
+            return '';
+        }
+        $members = [];
+        foreach ($this->get_allocations() as $allocation) {
+            $members[$allocation->choiceid] = ($members[$allocation->choiceid] ?? 0) + 1;
+        }
+        if (empty($members)) {
+            return '';
+        }
+
+        $items = [];
+        foreach ($this->get_rateable_choices() as $choice) {
+            $count = $members[$choice->id] ?? 0;
+            if ($count < $minsize) {
+                $items[] = format_string($choice->title) . ' (' . $count . ')';
+            }
+        }
+        if (empty($items)) {
+            return '';
+        }
+        $message = html_writer::tag('strong', get_string('diversityminsizenotice', 'ratingallocate', $minsize)) .
+            html_writer::alist($items);
+        return $OUTPUT->notification($message, \core\output\notification::NOTIFY_INFO);
     }
 
     /**
