@@ -1,6 +1,34 @@
 CHANGELOG
 =========
 
+Ratingallocate 5.0.0 +diversity.5 (fork)
+------------------
+
+- Add per-activity option `diversityequalsize` ("Group sizes" / "Fill all groups
+  to the same size"), shown only while "Balance groups by" is set. Default on,
+  which is the behaviour so far. Switched off, no choice has a minimum size, each
+  takes at most its own maximum, and participants who rated are only placed in a
+  choice they rated; the mix by profile field is still aimed for within those.
+  Whoever fits into none of their rated choices stays unallocated instead of
+  being placed elsewhere. Participants without any rating are placed wherever
+  there is room, as before.
+- "Distribute unallocated" follows the option as well: with equal sizes off it
+  fills up to each choice's maximum and may use any choice with room.
+- Add per-activity option `diversitypriority` ("Priority"), shown only while
+  "Balance groups by" is set: "Mix of the groups first, then ratings" (default,
+  the behaviour so far) or "Ratings first, then mix of the groups". With ratings
+  first, the mix only decides between allocations that are equally good for the
+  ratings.
+- Add per-activity option `diversityminsize` ("Minimum group size"), available
+  while equal sizes are off. A choice that would get fewer participants is
+  cancelled and the allocation is solved again without it in the same run; its
+  participants move to another choice they rated or stay unallocated. Choices
+  below the minimum are listed on the activity page after the run.
+- `compute_distribution()` and `size_window()` take an optional `$equalsize`
+  argument, `compute_distribution()` optional `$ratingsfirst` and `$minmembers`
+  ones, and it also returns the `unplaced` user ids and the `cancelled` choice
+  ids; without the arguments nothing changes.
+
 Ratingallocate 5.0.0 +diversity.4 (fork)
 ------------------
 
