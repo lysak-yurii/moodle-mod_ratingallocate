@@ -454,4 +454,74 @@ final class mincost_lowerbound_distributor_test extends \basic_testcase {
         $this->assertSame([], $equal['cancelled']);
         $this->assertCount(5, $this->assigned_users($equal['distribution']));
     }
+
+    /**
+     * A run with a minimum says which choices it cancelled, how big they were, and why each user is out.
+     */
+    public function test_minimum_reports_sizes_and_reasons(): void {
+        $choices = [$this->choice(1, 5), $this->choice(2, 5), $this->choice(3, 5)];
+        $userids = [1, 2, 3, 4, 5];
+        $deptof = array_fill_keys($userids, '');
+        $ratings = [
+            $this->rating(1, 1, 2), $this->rating(2, 1, 2), $this->rating(3, 1, 2),
+            $this->rating(4, 2, 2), $this->rating(4, 1, 1),
+            $this->rating(5, 3, 2),
+        ];
+
+        $solver = new \mincost_lowerbound_distributor();
+        $result = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null, null, false, true, 2);
+
+        $this->assertSame([2 => 1, 3 => 1], $result['cancelledsizes']);
+        $this->assertSame([5 => 'minimum'], $result['unplacedreasons']);
+
+        $full = $solver->compute_distribution($choices, $ratings, $userids, $deptof, null, null, false, true);
+        $this->assertSame([], $full['cancelledsizes'], 'nothing is cancelled without a minimum');
+        $this->assertSame([], $full['unplacedreasons']);
+    }
+
+    /**
+     * Each unplaced user gets exactly one reason, the first that applies.
+     */
+    public function test_explain_unplaced(): void {
+        $choices = [$this->choice(1, 2), $this->choice(2, 2), $this->choice(3, 2)];
+        $ratings = [
+            $this->rating(1, 1, 2),                          // Rated a full choice.
+            $this->rating(2, 1, 2), $this->rating(2, 2, 2),  // Rated a full and a cancelled choice.
+            $this->rating(3, 2, 2),                          // Rated only a cancelled choice.
+            $this->rating(4, 99, 2),                         // Rated only a hidden choice.
+            $this->rating(5, 3, 2),                          // Rated a choice closed to their group.
+            $this->rating(6, 1, 0),                          // A rating of 0 is no rating.
+        ];
+        $eligibility = [1 => [1, 2, 3], 2 => [1, 2, 3], 3 => [1, 2, 3], 4 => [1, 2, 3], 5 => [1, 2], 6 => [],
+            7 => [1]];
+
+        $reasons = \mincost_lowerbound_distributor::explain_unplaced([1, 2, 3, 4, 5, 6, 7], $choices, $ratings,
+            $eligibility, [2]);
+
+        $this->assertSame([1 => 'full', 2 => 'full', 3 => 'minimum', 4 => 'noroom', 5 => 'restricted',
+            6 => 'restricted', 7 => 'noroom'], $reasons);
+        $this->assertSame([], \mincost_lowerbound_distributor::explain_unplaced([], $choices, $ratings, null, []));
+    }
+
+    /**
+     * Mix statistics count the fully mixed groups among the filled ones and name the values too rare.
+     */
+    public function test_mix_statistics(): void {
+        $distribution = [1 => [1, 2], 2 => [3, 4], 3 => []];
+        $deptof = [1 => 'A', 2 => 'B', 3 => 'A', 4 => '', 5 => 'C', 6 => 'C'];
+
+        $stats = \mincost_lowerbound_distributor::mix_statistics($distribution, $deptof);
+
+        // Values A, B and C; neither filled group holds all three; B has one participant for two groups.
+        $this->assertSame(['groups' => 2, 'mixed' => 0, 'values' => 3, 'scarce' => ['B' => 1], 'novalue' => 1], $stats);
+
+        $mixed = \mincost_lowerbound_distributor::mix_statistics([1 => [1, 2], 2 => [3, 4]],
+            [1 => 'A', 2 => 'B', 3 => 'B', 4 => 'A']);
+        $this->assertSame(2, $mixed['mixed']);
+        $this->assertSame([], $mixed['scarce']);
+
+        $none = \mincost_lowerbound_distributor::mix_statistics([1 => [1]], [1 => '']);
+        $this->assertSame(0, $none['values']);
+        $this->assertSame(0, $none['mixed'], 'without any value no group counts as mixed');
+    }
 }

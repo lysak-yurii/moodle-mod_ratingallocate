@@ -482,4 +482,126 @@ final class diversity_allocation_test extends \advanced_testcase {
         $CFG->ratingallocate_download_userfields = '';
         $this->assertSame(['department'], $this->get_ratingallocate()->get_download_userfields());
     }
+
+    /**
+     * Run the distribution and return the message the teacher is shown afterwards.
+     *
+     * @return array [ string HTML, string notification type ]
+     */
+    private function run_and_get_summary_message(): array {
+        $ratingallocate = $this->get_ratingallocate();
+        $ratingallocate->distribute_choices();
+        $this->assertNotNull($ratingallocate->lastdistributionsummary);
+        return $ratingallocate->get_distribution_summary_message($ratingallocate->lastdistributionsummary);
+    }
+
+    /**
+     * A shorthand for the plugin's summary strings.
+     *
+     * @param string $id the part after 'diversitysummary_'
+     * @param mixed $a
+     * @return string
+     */
+    private function summary_string(string $id, $a = null): string {
+        return get_string('diversitysummary_' . $id, 'ratingallocate', $a);
+    }
+
+    /**
+     * When everyone is placed in fully mixed groups the message says just that, as a success.
+     */
+    public function test_summary_when_everything_worked(): void {
+        $this->create_activity(['diversityfield' => 'department'], ['G1' => 4, 'G2' => 4],
+            ['A1' => 'A', 'A2' => 'A', 'B1' => 'B', 'B2' => 'B']);
+
+        [$message, $type] = $this->run_and_get_summary_message();
+
+        $this->assertSame(\core\output\notification::NOTIFY_SUCCESS, $type);
+        $this->assertStringContainsString($this->summary_string('all', (object) ['count' => 4, 'groups' => 2]), $message);
+        $this->assertStringContainsString($this->summary_string('mix_all',
+            (object) ['field' => get_string('department'), 'groups' => 2, 'values' => 2]), $message);
+        $this->assertStringNotContainsString($this->summary_string('nobody'), $message);
+    }
+
+    /**
+     * A group below the minimum is named with its size, and whoever it leaves without a place is
+     * counted with the reason.
+     */
+    public function test_summary_names_cancelled_groups_and_unplaced_people(): void {
+        $this->create_activity(['diversityfield' => 'department', 'diversityequalsize' => 0, 'diversityminsize' => 2],
+            ['G1' => 5, 'G2' => 5], ['A1' => 'A', 'A2' => 'A', 'B1' => 'B']);
+        $this->rate('A1', ['G1']);
+        $this->rate('A2', ['G1']);
+        $this->rate('B1', ['G2']);
+
+        [$message, $type] = $this->run_and_get_summary_message();
+
+        $this->assertSame(\core\output\notification::NOTIFY_WARNING, $type, 'one of three is more than 10 %');
+        $this->assertStringContainsString($this->summary_string('placed', (object) ['placed' => 2, 'total' => 3]), $message);
+        $this->assertStringContainsString($this->summary_string('unplaced_minimum', (object) ['count' => 1, 'min' => 2]),
+            $message);
+        $this->assertStringContainsString($this->summary_string('cancelled_one', (object) ['min' => 2, 'list' => 'G2 (1)']),
+            $message);
+        $this->assertStringContainsString($this->summary_string('mix',
+            (object) ['field' => get_string('department'), 'mixed' => 0, 'groups' => 1, 'values' => 2]), $message);
+    }
+
+    /**
+     * A minimum above every group's maximum empties every group; the message says why instead of
+     * listing every cancelled group.
+     */
+    public function test_summary_explains_a_minimum_above_every_maximum(): void {
+        $this->create_activity(['diversityfield' => 'department', 'diversityequalsize' => 0, 'diversityminsize' => 3],
+            ['G1' => 2, 'G2' => 2], ['A1' => 'A', 'A2' => 'A', 'B1' => 'B', 'B2' => 'B']);
+        foreach (['A1', 'A2', 'B1', 'B2'] as $label) {
+            $this->rate($label, ['G1', 'G2']);
+        }
+
+        [$message, $type] = $this->run_and_get_summary_message();
+
+        $this->assertSame([], $this->get_ratingallocate()->get_allocations());
+        $this->assertSame(\core\output\notification::NOTIFY_ERROR, $type);
+        $this->assertStringContainsString($this->summary_string('nobody'), $message);
+        $this->assertStringContainsString($this->summary_string('minabovemax', (object) ['min' => 3, 'max' => 2]), $message);
+        $this->assertStringNotContainsString('G1', $message);
+    }
+
+    /**
+     * Left-out non-raters, missing field values, rare values and the ratings priority are all mentioned.
+     */
+    public function test_summary_mentions_skipped_rare_and_missing_values(): void {
+        $this->create_activity(['diversityfield' => 'department', 'diversityskipunrated' => 1, 'diversitypriority' => 1],
+            ['G1' => 3, 'G2' => 3], ['A1' => 'A', 'A2' => 'A', 'B1' => 'B', 'N1' => '', 'C1' => 'C']);
+        $this->rate('A1', ['G1']);
+        $this->rate('A2', ['G1']);
+        $this->rate('B1', ['G2']);
+        $this->rate('N1', ['G2']);
+
+        [$message, $type] = $this->run_and_get_summary_message();
+
+        // C1 was left out on purpose, so all who took part were placed: a success, not a shortfall.
+        $this->assertSame(\core\output\notification::NOTIFY_SUCCESS, $type);
+        $this->assertStringContainsString($this->summary_string('all_rated', (object) ['count' => 4, 'groups' => 2]),
+            $message);
+        $this->assertStringNotContainsString(' of 5 ', $message);
+        $skipped = $this->summary_string('skipped_one', (object) [
+            'setting' => get_string('diversityskipunrated', 'ratingallocate'),
+            'action' => get_string('distributeequally', 'ratingallocate'),
+        ]);
+        $this->assertStringEndsWith($skipped . '</div>', $message, 'the left-out participants come last');
+        $this->assertStringContainsString($this->summary_string('mix_scarce_one',
+            (object) ['value' => 'B', 'count' => 1, 'groups' => 2]), $message);
+        $this->assertStringContainsString($this->summary_string('mix_ratingsfirst'), $message);
+        $this->assertStringContainsString($this->summary_string('novalue_one', (object) ['field' => get_string('department')]),
+            $message);
+    }
+
+    /**
+     * Without balancing there is no summary, and the old message is shown.
+     */
+    public function test_no_summary_without_balancing(): void {
+        $this->create_activity([], ['G1' => 2], ['A1' => 'A']);
+        $ratingallocate = $this->get_ratingallocate();
+        $ratingallocate->distribute_choices();
+        $this->assertNull($ratingallocate->lastdistributionsummary);
+    }
 }

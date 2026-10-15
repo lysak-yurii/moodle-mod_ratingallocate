@@ -99,6 +99,12 @@ class ratingallocate {
      */
     protected $renderer;
 
+    /**
+     * @var array|null summary of the last {@see distribute_choices()} run while balancing by a profile
+     *      field, see {@see \mincost_lowerbound_distributor::distribute_users()}; null otherwise
+     */
+    public $lastdistributionsummary = null;
+
     /** @var string notify success */
     const NOTIFY_SUCCESS = 'notifysuccess';
     /** @var string notify message */
@@ -250,12 +256,12 @@ class ratingallocate {
                 );
                 $event->trigger();
 
-                redirect(
-                    new moodle_url($PAGE->url->out()),
-                    get_string('distribution_saved', RATINGALLOCATE_MOD_NAME, $timeneeded),
-                    null,
-                    notification::NOTIFY_SUCCESS
-                );
+                $message = get_string('distribution_saved', RATINGALLOCATE_MOD_NAME, $timeneeded);
+                $messagetype = notification::NOTIFY_SUCCESS;
+                if ($this->lastdistributionsummary !== null) {
+                    [$message, $messagetype] = $this->get_distribution_summary_message($this->lastdistributionsummary);
+                }
+                redirect(new moodle_url($PAGE->url->out()), $message, null, $messagetype);
             }
         }
         $raters = $this->get_raters_in_course();
@@ -1603,11 +1609,12 @@ class ratingallocate {
         $this->db->update_record(this_db\ratingallocate::TABLE, $this->origdbrecord);
 
         $timestart = microtime(true);
+        $this->lastdistributionsummary = null;
         try {
             if ($this->get_diversity_field() !== '') {
                 // Department-aware complete allocation: everyone placed, every group filled and balanced.
                 $distributor = new \mincost_lowerbound_distributor();
-                $distributor->distribute_users($this);
+                $this->lastdistributionsummary = $distributor->distribute_users($this);
             } else {
                 $distributor = new solver_edmonds_karp();
                 $distributor->distribute_users($this);
@@ -1893,6 +1900,139 @@ class ratingallocate {
         $message = html_writer::tag('strong', get_string('diversityminsizenotice', 'ratingallocate', $minsize)) .
             html_writer::alist($items);
         return $OUTPUT->notification($message, \core\output\notification::NOTIFY_INFO);
+    }
+
+    /**
+     * Put the summary of a run into words for the teacher: who was placed, who was not and why, which
+     * groups stayed below the minimum, how well the groups are mixed, and who the settings left out.
+     *
+     * @param array $summary see {@see \mincost_lowerbound_distributor::distribute_users()}
+     * @return array [ string HTML message, string notification type ]
+     */
+    public function get_distribution_summary_message(array $summary): array {
+        $str = fn($id, $a = null) => get_string('diversitysummary_' . $id, RATINGALLOCATE_MOD_NAME, $a);
+        // Who was left out on purpose is not part of the run, so not of these numbers either: the
+        // headline and the severity are about the participants the run had to place.
+        $total = $summary['total'];
+        $placed = $summary['placed'];
+        $rated = $summary['skipped'] > 0 ? '_rated' : '';
+        $mix = $summary['mix'];
+        $choices = $this->get_rateable_choices();
+
+        if ($total > 0 && $placed === 0) {
+            $lines = [$str('nobody')];
+            $largest = 0;
+            foreach ($choices as $choice) {
+                $largest = max($largest, (int) $choice->maxsize);
+            }
+            if ($summary['minsize'] > $largest && !empty($choices)) {
+                $lines[] = $str('minabovemax', (object) ['min' => $summary['minsize'], 'max' => $largest]);
+                return [$this->join_summary_lines($lines), notification::NOTIFY_ERROR];
+            }
+        } else if ($placed === $total) {
+            $lines = [$mix['groups'] === 1 ? $str('all' . $rated . '_onegroup', $total)
+                : $str('all' . $rated, (object) ['count' => $total, 'groups' => $mix['groups']])];
+        } else {
+            $lines = [$str('placed' . $rated, (object) ['placed' => $placed, 'total' => $total])];
+        }
+
+        // Who could not be placed, and why.
+        $unplaced = array_sum($summary['unplaced']);
+        if ($unplaced > 0) {
+            $reasons = array_intersect_key(['minimum' => 0, 'full' => 0, 'noroom' => 0, 'restricted' => 0],
+                $summary['unplaced']);
+            if (count($reasons) === 1) {
+                $reason = array_key_first($reasons);
+                $lines[] = $str('unplaced_' . $reason, (object) ['count' => $unplaced, 'min' => $summary['minsize']]);
+            } else {
+                $parts = [];
+                foreach (array_keys($reasons) as $reason) {
+                    $parts[] = $str('part_' . $reason, $summary['unplaced'][$reason]);
+                }
+                $lines[] = $str('unplaced_several', (object) ['count' => $unplaced, 'reasons' => implode(', ', $parts)]);
+            }
+        }
+        // Groups that did not reach the minimum, largest first.
+        if (!empty($summary['cancelled'])) {
+            $cancelled = $summary['cancelled'];
+            arsort($cancelled);
+            $names = [];
+            foreach (array_slice($cancelled, 0, 5, true) as $choiceid => $size) {
+                $title = isset($choices[$choiceid]) ? format_string($choices[$choiceid]->title) : $choiceid;
+                $names[] = $title . ' (' . $size . ')';
+            }
+            $list = implode(', ', $names);
+            if (count($cancelled) > 5) {
+                $list .= ' ' . $str('more', count($cancelled) - 5);
+            }
+            $a = (object) ['count' => count($cancelled), 'min' => $summary['minsize'], 'list' => $list];
+            $lines[] = count($cancelled) === 1 ? $str('cancelled_one', $a) : $str('cancelled', $a);
+        }
+
+        // How well the groups are mixed.
+        $field = get_string($summary['field']);
+        if ($placed > 0 && $mix['values'] === 0) {
+            $lines[] = $str('mix_novalues', $field);
+        } else if ($placed > 0) {
+            $a = (object) ['field' => $field, 'mixed' => $mix['mixed'], 'groups' => $mix['groups'],
+                'values' => $mix['values']];
+            $line = $mix['mixed'] === $mix['groups'] ? $str('mix_all', $a) : $str('mix', $a);
+            if ($mix['mixed'] < $mix['groups']) {
+                if (count($mix['scarce']) === 1) {
+                    $value = array_key_first($mix['scarce']);
+                    $line .= ' ' . $str('mix_scarce_one', (object) ['value' => s($value),
+                        'count' => $mix['scarce'][$value], 'groups' => $mix['groups']]);
+                } else if (!empty($mix['scarce'])) {
+                    $values = [];
+                    foreach ($mix['scarce'] as $value => $count) {
+                        $values[] = '"' . s($value) . '" (' . $count . ')';
+                    }
+                    $line .= ' ' . $str('mix_scarce', (object) ['values' => implode(', ', $values),
+                        'groups' => $mix['groups']]);
+                }
+                if ($summary['ratingsfirst']) {
+                    $line .= ' ' . $str('mix_ratingsfirst');
+                }
+            }
+            $lines[] = $line;
+        }
+        if ($placed > 0 && $mix['novalue'] > 0) {
+            $a = (object) ['count' => $mix['novalue'], 'field' => $field];
+            $lines[] = $mix['novalue'] === 1 ? $str('novalue_one', $a) : $str('novalue', $a);
+        }
+
+        // Last, as a side note: the participants the settings left out, and how to place them.
+        if ($summary['skipped'] > 0) {
+            $a = (object) [
+                'count' => $summary['skipped'],
+                'setting' => get_string('diversityskipunrated', RATINGALLOCATE_MOD_NAME),
+                'action' => get_string('distributeequally', RATINGALLOCATE_MOD_NAME),
+            ];
+            $lines[] = $summary['skipped'] === 1 ? $str('skipped_one', $a) : $str('skipped', $a);
+        }
+
+        $missing = $total - $placed;
+        if ($total > 0 && $placed === 0) {
+            $type = notification::NOTIFY_ERROR;
+        } else if ($missing * 10 > $total) {
+            $type = notification::NOTIFY_WARNING;
+        } else if ($missing > 0 || !empty($summary['cancelled'])) {
+            $type = notification::NOTIFY_INFO;
+        } else {
+            $type = notification::NOTIFY_SUCCESS;
+        }
+        return [$this->join_summary_lines($lines), $type];
+    }
+
+    /**
+     * One line of the run summary per block, headline first. The lines are HTML already: choice
+     * titles went through format_string() and field values through s().
+     *
+     * @param string[] $lines
+     * @return string HTML
+     */
+    private function join_summary_lines(array $lines): string {
+        return implode('', array_map(fn($line) => html_writer::div($line), $lines));
     }
 
     /**

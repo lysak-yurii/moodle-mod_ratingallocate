@@ -231,7 +231,9 @@ class mincost_lowerbound_distributor {
      *        nobody is used to fill a group; 0 or 1 means no minimum.
      * @return array [ 'distribution' => array(choiceid => [userid, ...]), 'report' => array of messages,
      *        'unplaced' => list of userids that could not be seated,
-     *        'cancelled' => list of choiceids emptied for staying below $minmembers ]
+     *        'unplacedreasons' => array(userid => reason), see {@see explain_unplaced()},
+     *        'cancelled' => list of choiceids emptied for staying below $minmembers,
+     *        'cancelledsizes' => array(choiceid => members it had when it was cancelled) ]
      * @throws \moodle_exception when the configured capacities cannot accommodate every student
      */
     public function compute_distribution(array $choicerecords, array $ratings, array $userids,
@@ -240,6 +242,7 @@ class mincost_lowerbound_distributor {
 
         $checkminimum = $minmembers > 1 && !$equalsize && $fixed === null;
         $cancelled = [];
+        $cancelledsizes = [];
         // Every round cancels at least one more choice, so this ends after at most one round per choice.
         do {
             $result = $this->solve($choicerecords, $ratings, $userids, $deptof, $eligibility, $fixed,
@@ -249,6 +252,7 @@ class mincost_lowerbound_distributor {
                 foreach ($result['distribution'] as $cid => $members) {
                     if (!empty($members) && count($members) < $minmembers) {
                         $toosmall[] = $cid;
+                        $cancelledsizes[$cid] = count($members);
                     }
                 }
             }
@@ -256,7 +260,113 @@ class mincost_lowerbound_distributor {
         } while (!empty($toosmall));
 
         $result['cancelled'] = $cancelled;
+        $result['cancelledsizes'] = $cancelledsizes;
+        $result['unplacedreasons'] = self::explain_unplaced($result['unplaced'], $choicerecords, $ratings,
+            $eligibility, $cancelled);
         return $result;
+    }
+
+    /**
+     * Say for each user who could not be seated why not, so the teacher can be told after the run.
+     *
+     * Exactly one reason per user, checked in this order:
+     *  - 'restricted': the group restrictions leave no choice the user may join that they rated
+     *    (or, without any rating, no choice at all);
+     *  - 'noroom': the user rated no active choice, and no choice had a seat left for them;
+     *  - 'minimum': every choice the user rated and may join was cancelled for staying below the minimum;
+     *  - 'full': the choices the user rated were full.
+     *
+     * @param int[] $unplaced ids of the users that could not be seated
+     * @param array $choicerecords choice records; each needs ->id
+     * @param array $ratings rating records; each needs ->userid, ->choiceid, ->rating
+     * @param array|null $eligibility map userid => list of choiceids, or null for "everyone everywhere"
+     * @param int[] $cancelled ids of the choices cancelled for staying below the minimum
+     * @return array map userid => reason
+     */
+    public static function explain_unplaced(array $unplaced, array $choicerecords, array $ratings,
+            ?array $eligibility, array $cancelled) {
+        if (empty($unplaced)) {
+            return [];
+        }
+        $choiceids = [];
+        foreach ($choicerecords as $record) {
+            $choiceids[$record->id] = true;
+        }
+        $rated = [];
+        foreach ($ratings as $rating) {
+            if ($rating->rating > 0 && isset($choiceids[$rating->choiceid])) {
+                $rated[$rating->userid][$rating->choiceid] = true;
+            }
+        }
+        $cancelledset = array_flip($cancelled);
+
+        $reasons = [];
+        foreach ($unplaced as $uid) {
+            $allowed = $eligibility === null ? $choiceids : array_flip($eligibility[$uid] ?? []);
+            $own = $rated[$uid] ?? [];
+            if (empty($own)) {
+                $reasons[$uid] = empty($allowed) ? 'restricted' : 'noroom';
+                continue;
+            }
+            $open = array_intersect_key($own, $allowed);
+            if (empty($open)) {
+                $reasons[$uid] = 'restricted';
+            } else if (empty(array_diff_key($open, $cancelledset))) {
+                $reasons[$uid] = 'minimum';
+            } else {
+                $reasons[$uid] = 'full';
+            }
+        }
+        return $reasons;
+    }
+
+    /**
+     * How well the groups of an allocation are mixed by the profile field.
+     *
+     * A group counts as fully mixed when it holds every field value present among the participants.
+     * A value with fewer participants than there are filled groups cannot be in all of them.
+     *
+     * @param array $distribution map choiceid => list of userids
+     * @param array $deptof map userid => field value, for every participant ('' = no value)
+     * @return array [ 'groups' => filled groups, 'mixed' => fully mixed groups, 'values' => number of
+     *        distinct values, 'scarce' => array(value => participants) for the values too rare for every
+     *        filled group, 'novalue' => participants without a value ]
+     */
+    public static function mix_statistics(array $distribution, array $deptof) {
+        $count = [];
+        $novalue = 0;
+        foreach ($deptof as $value) {
+            $value = trim((string) $value);
+            if ($value === '') {
+                $novalue++;
+            } else {
+                $count[$value] = ($count[$value] ?? 0) + 1;
+            }
+        }
+
+        $groups = 0;
+        $mixed = 0;
+        foreach ($distribution as $members) {
+            if (empty($members)) {
+                continue;
+            }
+            $groups++;
+            $present = [];
+            foreach ($members as $uid) {
+                $value = trim((string) ($deptof[$uid] ?? ''));
+                if ($value !== '') {
+                    $present[$value] = true;
+                }
+            }
+            if (!empty($count) && count($present) === count($count)) {
+                $mixed++;
+            }
+        }
+
+        $scarce = array_filter($count, fn($n) => $n < $groups);
+        ksort($scarce);
+        return ['groups' => $groups, 'mixed' => $mixed, 'values' => count($count), 'scarce' => $scarce,
+            'novalue' => $novalue];
     }
 
     /**
@@ -721,7 +831,12 @@ class mincost_lowerbound_distributor {
      * Entry point used by the ratingallocate instance: load data, solve, persist the allocation.
      *
      * @param ratingallocate $ratingallocate
-     * @return array coverage report (list of messages) produced by the solver
+     * @return array summary of the run for the teacher: [ 'total' => participants the run had to place,
+     *        'placed' => participants seated, 'skipped' => participants left out for not rating (not part
+     *        of 'total'),
+     *        'unplaced' => array(reason => count), 'cancelled' => array(choiceid => members it had),
+     *        'minsize' => minimum group size, 'mix' => {@see mix_statistics()}, 'field' => profile field,
+     *        'ratingsfirst' => bool, 'report' => coverage report produced by the solver ]
      */
     public function distribute_users(ratingallocate $ratingallocate) {
         $field = $ratingallocate->get_diversity_field();
@@ -754,13 +869,30 @@ class mincost_lowerbound_distributor {
 
         $transaction = $ratingallocate->db->start_delegated_transaction();
         $ratingallocate->clear_all_allocations();
+        $placed = 0;
         foreach ($result['distribution'] as $choiceid => $users) {
             foreach ($users as $userid) {
                 $ratingallocate->add_allocation($choiceid, $userid, $ratingallocate->ratingallocate->id);
+                $placed++;
             }
         }
         $transaction->allow_commit();
 
-        return $result['report'];
+        $unplaced = [];
+        foreach ($result['unplacedreasons'] as $reason) {
+            $unplaced[$reason] = ($unplaced[$reason] ?? 0) + 1;
+        }
+        return [
+            'total' => count($userids),
+            'placed' => $placed,
+            'skipped' => count($raters) - count($userids),
+            'unplaced' => $unplaced,
+            'cancelled' => $result['cancelledsizes'],
+            'minsize' => $ratingallocate->get_diversity_min_size(),
+            'mix' => self::mix_statistics($result['distribution'], array_intersect_key($deptof, array_flip($userids))),
+            'field' => $field,
+            'ratingsfirst' => $ratingallocate->get_diversity_ratings_first(),
+            'report' => $result['report'],
+        ];
     }
 }
