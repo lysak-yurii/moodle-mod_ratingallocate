@@ -1,6 +1,30 @@
 CHANGELOG
 =========
 
+Ratingallocate 5.0.0 +diversity.6 (fork)
+------------------
+
+- After running the algorithm with "Balance groups by" set, the notification
+  summarises the result instead of only "Distribution saved": how many
+  participants were placed, how many could not be placed and why (their chosen
+  groups stayed below the minimum size, were full, had no room left, or were
+  closed by group restrictions), which groups did not reach the minimum size
+  (with the number of participants they would have had), and how many groups
+  include every value of the profile field, with the reason when that is not
+  possible for every group. Participants left out by "Students without ratings"
+  are not counted as missing: they get a separate note at the end. Green when
+  everyone was placed, blue for small losses, yellow when more than 10 % could
+  not be placed, red when nobody was.
+- A minimum group size above the maximum size of every choice cancels all of
+  them; the notification now says so instead of silently leaving everyone
+  unallocated.
+- `compute_distribution()` also returns `unplacedreasons` and `cancelledsizes`,
+  and `distribute_users()` returns a summary of the run instead of the coverage
+  report alone. New helpers `explain_unplaced()` and `mix_statistics()`.
+- Add integration tests for the balanced allocation (settings, stored result,
+  group restrictions, top-up, coverage report, notices, downloads, run summary),
+  and fix tests that failed under a full Moodle PHPUnit run.
+
 Ratingallocate 5.0.0 +diversity.5 (fork)
 ------------------
 
