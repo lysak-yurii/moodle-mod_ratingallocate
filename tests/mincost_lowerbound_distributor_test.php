@@ -178,9 +178,12 @@ final class mincost_lowerbound_distributor_test extends \basic_testcase {
         $deptof = array_fill_keys($userids, '');
 
         $solver = new \mincost_lowerbound_distributor();
-        $this->expectException(\moodle_exception::class);
-        $this->expectExceptionMessageMatches('/diversityinfeasible_capacity/');
-        $solver->compute_distribution($choices, [], $userids, $deptof, null);
+        try {
+            $solver->compute_distribution($choices, [], $userids, $deptof, null);
+            $this->fail('the distribution should not succeed');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('diversityinfeasible_capacity', $e->errorcode);
+        }
     }
 
     /**
@@ -265,9 +268,12 @@ final class mincost_lowerbound_distributor_test extends \basic_testcase {
         $deptof = [11 => 'A', 12 => 'A', 21 => 'B', 31 => 'A', 32 => 'B'];
 
         $solver = new \mincost_lowerbound_distributor();
-        $this->expectException(\moodle_exception::class);
-        $this->expectExceptionMessageMatches('/diversityinfeasible_topup/');
-        $solver->compute_distribution($choices, [], [31, 32], $deptof, null, $fixed);
+        try {
+            $solver->compute_distribution($choices, [], [31, 32], $deptof, null, $fixed);
+            $this->fail('the top-up should not succeed');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('diversityinfeasible_topup', $e->errorcode);
+        }
     }
 
     /**
